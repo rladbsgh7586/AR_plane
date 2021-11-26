@@ -16,11 +16,13 @@
 
 package com.google.ar.core.examples.java.resolver;
 
+import android.Manifest;
 import android.content.ContentResolver;
 import android.content.ContentValues;
 import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
+import android.content.pm.PackageManager;
 import android.database.Cursor;
 import android.graphics.Bitmap;
 import android.graphics.Canvas;
@@ -49,6 +51,8 @@ import android.widget.Toast;
 import androidx.annotation.GuardedBy;
 import androidx.annotation.NonNull;
 import androidx.appcompat.app.AppCompatActivity;
+import androidx.core.app.ActivityCompat;
+import androidx.core.content.ContextCompat;
 import androidx.fragment.app.DialogFragment;
 import androidx.loader.content.CursorLoader;
 
@@ -132,6 +136,9 @@ public class HelloArActivity extends AppCompatActivity implements SampleRender.R
   private static final String HOSTING_PLANE_MESSAGE = "Hosting plane anchors...";
   private static final String WAITING_FOR_TAP_MESSAGE = "Tap on a surface to place an object.";
 
+  private static final int PERMISSIONS_REQUEST_CAMERA = 0;
+  private static final int PERMISSIONS_REQUEST_WRITE = 1;
+
   private String serverIP = "115.145.175.42";
   private int serverPort = 7586;
   private Long recentRoomCode = 0L;
@@ -197,7 +204,7 @@ public class HelloArActivity extends AppCompatActivity implements SampleRender.R
   private boolean shouldMakeRenders = false;
 
   private Session session;
-  private final SnackbarHelper messageSnackbarHelper = new SnackbarHelper();
+  public SnackbarHelper messageSnackbarHelper = new SnackbarHelper();
   private DisplayRotationHelper displayRotationHelper;
   private final TrackingStateHelper trackingStateHelper = new TrackingStateHelper(this);
   private TapHelper tapHelper;
@@ -244,11 +251,9 @@ public class HelloArActivity extends AppCompatActivity implements SampleRender.R
   private Texture cloudAnchorTextTexture;
   private float[] anchorColor = {0.0f, 1.0f, 0.0f, 0.7f};
   private float[] planeAnchorColor = {1.0f, 0.0f, 0.0f, 0.3f};
-//  private float[] borderColorA = {1.0f, 0.0f, 0.0f, 0.7f};
   private float[] borderColorA = {1.0f, 1.0f, 1.0f, 0.0f};
   private float[] borderColorB = {1.0f, 1.0f, 1.0f, 0.0f};
   private float[] planeAnchorColorB = {0.0f, 0.0f, 1.0f, 0.3f};
-//  private float[] borderColorB = {0.0f, 0.0f, 1.0f, 0.7f};
   private Shader virtualObjectShader;
   private final ArrayList<Anchor> anchors = new ArrayList<>();
 
@@ -295,6 +300,11 @@ public class HelloArActivity extends AppCompatActivity implements SampleRender.R
     RESOLVING,
   }
 
+  private enum GroundTruthMode {
+    TRUE,
+    FALSE
+  }
+
   // Locks needed for synchronization
   private final Object singleTapLock = new Object();
   private final Object anchorLock = new Object();
@@ -321,9 +331,11 @@ public class HelloArActivity extends AppCompatActivity implements SampleRender.R
   private final CloudAnchorManager cloudManager = new CloudAnchorManager();
   private HostResolveMode currentMode;
   private RoomCodeAndCloudAnchorIdListener hostListener;
+  private GroundTruthRecorder groundTruthRecorder;
 
   // Tracks app's specific state changes.
   private AppState appState = AppState.Idle;
+  private GroundTruthMode gtMode = GroundTruthMode.TRUE;
   private int REQUEST_MP4_SELECTOR = 1;
   private int STORE_ARCORE_PLANES = 0;
 
@@ -597,6 +609,9 @@ public class HelloArActivity extends AppCompatActivity implements SampleRender.R
     try {
       // Prepare the session for recording, but do not start recording yet.
       session.startRecording(recordingConfig);
+      if(gtMode == GroundTruthMode.TRUE) {
+        groundTruthRecorder.recordBagStart("test");
+      }
     } catch (RecordingFailedException e) {
       Log.e(TAG, "startRecording - Failed to prepare to start recording", e);
       return false;
@@ -616,7 +631,9 @@ public class HelloArActivity extends AppCompatActivity implements SampleRender.R
   private boolean stopRecording() {
     try {
       session.stopRecording();
-
+      if(gtMode == GroundTruthMode.TRUE){
+        groundTruthRecorder.recordBagStop();
+      }
     } catch (RecordingFailedException e) {
       Log.e(TAG, "stopRecording - Failed to stop recording", e);
       return false;
@@ -655,8 +672,6 @@ public class HelloArActivity extends AppCompatActivity implements SampleRender.R
   private final String MP4_VIDEO_MIME_TYPE = "video/mp4";
 
   private String createMp4File() {
-//    SimpleDateFormat dateFormat = new SimpleDateFormat("yyyyMMdd_HHmmss");
-//    String mp4FileName = "arcore-" + dateFormat.format(new Date()) + ".mp4";
     String mp4FileName = recordType + Long.toString(testRoomCode) + ".mp4";
 
     ContentResolver resolver = this.getContentResolver();
@@ -699,20 +714,6 @@ public class HelloArActivity extends AppCompatActivity implements SampleRender.R
 
     String filePath = getMediaFilePath(newMp4FileUri);
     Log.d(TAG, String.format("createMp4File = %s, API Level = %d", filePath, Build.VERSION.SDK_INT));
-
-    return filePath;
-  }
-
-  private String getImgPath(int fileNumber) {
-    String imgFileName = "frame_" + Integer.toString(fileNumber) + ".jpg";
-
-    String saveDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES).toString();
-    File file = new File(saveDir);
-    if (!file.exists()){
-      file.mkdir();
-    }
-
-    String filePath = saveDir + "/indoor/" + imgFileName;
 
     return filePath;
   }
@@ -811,7 +812,9 @@ public class HelloArActivity extends AppCompatActivity implements SampleRender.R
     remoteServerManager = new RemoteServerManager(serverIP, serverPort);
     viewHandler = new ViewHandler();
 
-
+    if(gtMode == GroundTruthMode.TRUE){
+      groundTruthRecorder = new GroundTruthRecorder(this);
+    }
   }
 
   class ViewHandler extends Handler{
@@ -994,6 +997,27 @@ public class HelloArActivity extends AppCompatActivity implements SampleRender.R
   @Override
   public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] results) {
     super.onRequestPermissionsResult(requestCode, permissions, results);
+    if (android.os.Build.VERSION.SDK_INT > android.os.Build.VERSION_CODES.O &&
+            ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
+      ActivityCompat.requestPermissions(this, new String[]{Manifest.permission.CAMERA}, PERMISSIONS_REQUEST_CAMERA);
+      return;
+    }
+
+    if (ContextCompat.checkSelfPermission(this, Manifest.permission.WRITE_EXTERNAL_STORAGE) != PackageManager.PERMISSION_GRANTED) {
+      ActivityCompat.requestPermissions(this, new String[]{Manifest.permission.WRITE_EXTERNAL_STORAGE}, 0);
+      return;
+    }
+
+    if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
+      ActivityCompat.requestPermissions(this, new String[]{Manifest.permission.CAMERA}, PERMISSIONS_REQUEST_WRITE);
+      return;
+    }
+
+    if (ContextCompat.checkSelfPermission(this, Manifest.permission.WRITE_EXTERNAL_STORAGE) != PackageManager.PERMISSION_GRANTED) {
+      ActivityCompat.requestPermissions(this, new String[]{Manifest.permission.WRITE_EXTERNAL_STORAGE}, 0);
+      return;
+    }
+
     if (!CameraPermissionHelper.hasCameraPermission(this)) {
       // Use toast instead of snackbar here since the activity will exit.
       Toast.makeText(this, "Camera permission is needed to run this application", Toast.LENGTH_LONG)
@@ -1301,17 +1325,14 @@ public class HelloArActivity extends AppCompatActivity implements SampleRender.R
             pointCloud.getIds().get(currentPointIds);
             Arrays.asList(currentPointIds);
             Set<Integer> currentPointSet = Arrays.stream(currentPointIds).boxed().collect(Collectors.toSet());
-//            Log.d("yunho-id-intersection", Integer.toString(CountIntersection(previousKeyFrameIds, currentPointSet)));
 //            keyFrameSelector
 //            using point intersection between previous keyframe and currentframe
             if(CountIntersection(previousKeyFrameIds, currentPointSet) <= 0){
-//            if(CountIntersection(previousKeyFrameIds, currentPointSet) <= previousKeyFrameIds.size() * 2 / 3){
               previousKeyFrameIds = currentPointSet;
               keyFrameCount += 1;
               try{
                 Image keyFrame = frame.acquireCameraImage();
                 byte[] jpegData = ImageHelper.imageToByteArray(keyFrame);
-//                ImageHelper.writeFrame(getImgPath(keyFrameCount), jpegData);
                 Log.d("yunho", "keyFrameSelected "+Integer.toString(keyFrameCount));
                 firebaseManager.uploadImage(jpegData, Integer.toString(keyFrameCount));
                 keyFrame.close();
@@ -1322,34 +1343,12 @@ public class HelloArActivity extends AppCompatActivity implements SampleRender.R
             }
           }
         }
-//        if (appState == AppState.Playingback){
-//          pointCloudWriter.writeBuffer(pointCloud.getIds(), pointCloud.getPoints());
-//        }
+
       }
       Matrix.multiplyMM(modelViewProjectionMatrix, 0, projectionMatrix, 0, viewMatrix, 0);
       pointCloudShader.setMat4("u_ModelViewProjection", modelViewProjectionMatrix);
       render.draw(pointCloudMesh, pointCloudShader);
     }
-
-//    PlaneAnchor uploadedAnchor = null;
-//    if(currentMode == HostResolveMode.PLANEHOSTING){
-//      int i = 1;
-//      for(Plane plane : session.getAllTrackables(Plane.class)){
-//        if (plane.getTrackingState() != TrackingState.TRACKING || plane.getSubsumedBy() != null) {
-//          continue;
-//        }
-//
-//        float distance = PlaneRenderer.calculateDistanceToPlane(plane.getCenterPose(), camera.getDisplayOrientedPose());
-//        if (distance < 0) { // Plane is back-facing.
-//          continue;
-//        }
-//        uploadedAnchor = firebaseManager.uploadPlane(plane, anchor, keyFrameCount);
-//        if(uploadedAnchor != null){
-//          makePlaneRenders(uploadedAnchor, "PLANE"+Integer.toString(i));
-//          i+=1;
-//        }
-//      }
-//    }
 
     if(currentMode == HostResolveMode.PLANEHOSTING){
       planeRenderer.drawPlanes(
@@ -1509,18 +1508,9 @@ public class HelloArActivity extends AppCompatActivity implements SampleRender.R
       synchronized (anchorLock) {
         // Only handle a tap if the anchor is currently null, the queued tap is non-null and the
         // camera is currently tracking.
-//        Log.d("yunho-error", "----------");
-//        if(anchor == null){
-//          Log.d("yunho-error", "anchor NULL");
-//        }
-//        if(queuedSingleTap != null){
-//          Log.d("yunho-error", "queuedSingleTap not NULL");
-//        }
-//        Log.d("yunho-error", cameraTrackingState.toString());
         if (anchor == null
                 && queuedSingleTap != null
                 && cameraTrackingState == TrackingState.TRACKING) {
-//          Log.d("yunho-error", "4");
           Preconditions.checkState(
                   currentMode == HostResolveMode.HOSTING,
                   "We should only be creating an anchor in hosting mode.");

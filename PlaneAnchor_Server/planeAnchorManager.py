@@ -1,59 +1,57 @@
 import socket
-import firebase_admin
-from firebase_admin import credentials, storage
-from planeDectector import run_model
-from firebase_admin import db
+from planeDetector import run_model
 from google.cloud import storage as s
 from planeAnchor import *
-from options import parse_args_custom
 import os
 import time
-from evaluate import evaluate
+import glob
 import numpy as np
 from PIL import Image
-
-host = "192.168.1.16"
-port = 7586
+import sys
 
 
-def get_firebase_image(room):
-    # storage = firebase_admin.storage()
-
+def download_device_data(room, image_path):
     storage_client = s.Client()
 
-    # Note: Client.list_blobs requires at least package version 1.17.0.
-    my_prefix = "Image/" + str(room) + "/"
-    blobs = storage_client.list_blobs('planeanchor.appspot.com', prefix=my_prefix, delimiter="/")
+    file_prefix = "Image/" + str(room) + "/"
+    blobs = storage_client.list_blobs('planeanchor.appspot.com', prefix=file_prefix, delimiter="/")
 
     inverse_model_view_matrix = []
     view_matrix = []
 
-    image_number = 0
-    directory = "./smartphone_indoor/"+str(room)+"/"
+    image_num = 0
     try:
-        if not os.path.exists(directory):
-            os.makedirs(directory)
+        os.makedirs(image_path)
     except OSError:
-        print('Error: Creating directory. ' + directory)
+        print('Error: Creating directory. ' + image_path)
 
     for blob in blobs:
-        file_path = directory+blob.name.split("/")[-1]
+        file_path = image_path + blob.name.split("/")[-1]
         blob.download_to_filename(file_path)
         print(blob.metadata)
         if 'depth' in file_path:
-            parsing_depth_image(file_path, blob.metadata['width'], blob.metadata['height'])
+            parsing_depth_image(file_path, image_path, blob.metadata['width'], blob.metadata['height'])
         if 'jpg' in file_path:
-            image_number += 1
-            inverse_model_view_matrix.append(parsing_modelMatrix(blob.metadata['inverseModelViewMatrix']))
-            view_matrix.append(parsing_modelMatrix(blob.metadata['viewMatrix']))
-    np.save(directory+"inverse_model_view_matrix", inverse_model_view_matrix)
-    np.save(directory + "view_matrix", view_matrix)
+            image_num += 1
+            inverse_model_view_matrix.append(parsing_transformation_matrix(blob.metadata['inverseModelViewMatrix']))
+            view_matrix.append(parsing_transformation_matrix(blob.metadata['viewMatrix']))
+    np.save(image_path + "inverse_model_view_matrix", inverse_model_view_matrix)
+    np.save(image_path + "view_matrix", view_matrix)
 
-    return image_number
+    preprocess_images(image_path)
 
 
-def parsing_depth_image(file_name, width, height):
-    print(file_name)
+def count_device_data(image_path):
+    file_list = os.listdir(image_path)
+    data_num = 0
+    for item in file_list:
+        file_name = item.split(".")[0]
+        if file_name.isnumeric():
+            data_num += 1
+    return data_num
+
+
+def parsing_depth_image(file_name, image_path, width, height):
     f = open(file_name, 'rb')
     data = f.read()
     x = np.fromstring(data, dtype=np.uint8)
@@ -64,10 +62,16 @@ def parsing_depth_image(file_name, width, height):
         depth_confidence = depth_bit[i*16:i*16+3]
         pixel_depth = depth_bit[i*16+3:(i+1)*16]
         depth_image.append(bit2int(pixel_depth))
-    new_file_name = file_name[:-3] + 'png'
+    new_file_name = str.split(file_name, "/")[-1]
+    new_file_name = str.split(new_file_name, ".txt")[0] + '.png'
+    add_path = image_path + 'add/'
+    if not os.path.exists(add_path):
+        os.system("mkdir -p %s" % add_path)
+        pass
+
     depth_np =np.array(depth_image, dtype='u4').reshape(int(height), int(width))
     im = Image.fromarray(depth_np)
-    im.save(new_file_name)
+    im.save(add_path + new_file_name)
 
 
 def bit2int(bitarray):
@@ -78,28 +82,43 @@ def bit2int(bitarray):
     return res
 
 
-def parsing_modelMatrix(array_string):
+def parsing_transformation_matrix(array_string):
     array_string = array_string.replace("[","")
     array_string = array_string.replace("]", "")
     array_string = array_string.replace(" ", "")
     array = np.array(array_string.split(","))
-    model_matrix = np.zeros((4,4))
-    print(array)
+    transformation_matrix = np.zeros((4,4))
     for i in range(4):
         for j in range(4):
-            model_matrix[i][j] = float(array[i*4+j])
-    print(model_matrix)
-    return model_matrix
+            transformation_matrix[i][j] = float(array[i*4+j])
+    return transformation_matrix
 
 
-if __name__ == "__main__":
-    cred = credentials.Certificate('key_file.json')
-    firebase_admin.initialize_app(cred, {
-        'databaseURL': 'https://planeanchor-default-rtdb.firebaseio.com/',
-        'storageBucket': 'gs://planeanchor.appspot.com'
-    })
-    # roomCode = 2
-    # parsing_depth_image('./smartphone_indoor/7/1_depth.txt', 160, 90)
+def save_camera_intrinsic(image_path):
+    camera_intrinsic = [492, 490, 308, 229, 640, 480]
+    f = open(image_path + "camera.txt", "w")
+    for i in camera_intrinsic:
+        f.write(str(i) + " ")
+    f.close()
+
+
+def preprocess_images(image_path):
+    images = glob.glob(image_path + "*.jpg")
+    add_path = image_path + "add/"
+    for path in images:
+        original_img = cv2.imread(path)
+        img = original_img[80:560, :, :]
+        new_img = np.zeros([480, 640, 3], dtype=np.float32)
+        new_img[:, 80:560, :] = img
+        file_name = str.split(path, "/")[-1]
+        file_name = str.split(file_name, ".jpg")[0]
+
+        cv2.imwrite(image_path + file_name + ".jpg", new_img)
+        cv2.imwrite(add_path + file_name + "_ori.jpg", original_img)
+        cv2.imwrite(add_path + file_name + "_crop.jpg", img)
+
+
+def listen_device(host, port):
     while (1):
         server_sock = socket.socket(socket.AF_INET)
         server_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
@@ -113,24 +132,33 @@ if __name__ == "__main__":
         deviceData = data.decode("utf-8")
 
         parsingData = deviceData.split("/")
-        roomCode = parsingData[1]
+        room_num = parsingData[1]
         time.sleep(10)
-        # break
-        # roomCode = 9
-        # print(roomCode)
 
-        total_image_number = get_firebase_image(roomCode)
-        run_model(roomCode)
-        # total_image_number = 4
-        host_plane_anchor(roomCode, total_image_number)
-        break
-        #
-        # client_sock.close()
-        # server_sock.close()
-    #
-    # for roomCode in [154, 155, 156, 158, 159]:
-    #     total_image_number = get_firebase_image(roomCode)
-    #     run_model(roomCode)
-    #     # total_image_number = 4
-    #     host_plane_anchor(roomCode, total_image_number)
+        download_device_data(room_num)
+        total_image_number = count_device_data(room_num)
+        save_camera_intrinsic(room_num)
+        run_model(room_num)
+        host_plane(room_num, total_image_number)
+
+        client_sock.close()
+        server_sock.close()
+
+
+def test_plane_anchor(room_num, skip_download=False, skip_inference=False):
+    image_path = "./smartphone_indoor/" + str(room_num) + "/"
+    if skip_download == False:
+        download_device_data(room_num, image_path)
+    total_image_number = count_device_data(image_path)
+    save_camera_intrinsic(image_path)
+    if skip_inference == False:
+        run_model(room_num)
+    host_plane(room_num, total_image_number)
+
+
+if __name__ == "__main__":
+    host = "192.168.1.16"
+    port = 7586
+    # listen_device(host, port)
+    test_plane_anchor(room_num=10, skip_download=True, skip_inference=False)
 

@@ -1,0 +1,6 @@
+PlaneAnchor_Server/smartphone_indoor/
+PlaneAnchor_Server/checkpoint/
+PlaneAnchor_Server/inference/
+PlaneAnchor_Server/*.bag/
+rs_bag2image/
+
