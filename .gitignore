@@ -2,6 +2,10 @@ PlaneAnchor_Server/smartphone_indoor/
 PlaneAnchor_Server/checkpoint/
 PlaneAnchor_Server/inference/
 Evaluation/data/
+Evaluation/scenario/
 rs_bag2image/
 *.bag
 *.mp4
+*.png
+*.npy
+*.ply
