@@ -14,9 +14,10 @@
  * limitations under the License.
  */
 
-package com.google.ar.core.examples.java.resolver;
+package com.google.ar.core.examples.java.host;
 
 import android.Manifest;
+import android.accounts.AccountManager;
 import android.content.ContentResolver;
 import android.content.ContentValues;
 import android.content.Context;
@@ -53,6 +54,7 @@ import androidx.annotation.NonNull;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.app.ActivityCompat;
 import androidx.core.content.ContextCompat;
+import androidx.core.view.MotionEventCompat;
 import androidx.fragment.app.DialogFragment;
 import androidx.loader.content.CursorLoader;
 
@@ -72,11 +74,13 @@ import com.google.ar.core.PointCloud;
 import com.google.ar.core.RecordingConfig;
 import com.google.ar.core.RecordingStatus;
 import com.google.ar.core.Session;
+import com.google.ar.core.Track;
+import com.google.ar.core.TrackData;
 import com.google.ar.core.Trackable;
 import com.google.ar.core.TrackingFailureReason;
 import com.google.ar.core.TrackingState;
 import com.google.ar.core.examples.java.common.samplerender.arcore.TextRenderer;
-import com.google.ar.core.examples.java.resolver.PrivacyNoticeDialogFragment.HostResolveListener;
+import com.google.ar.core.examples.java.host.PrivacyNoticeDialogFragment.HostResolveListener;
 import com.google.ar.core.examples.java.common.helpers.CameraPermissionHelper;
 import com.google.ar.core.examples.java.common.helpers.DepthSettings;
 import com.google.ar.core.examples.java.common.helpers.DisplayRotationHelper;
@@ -106,21 +110,21 @@ import com.google.ar.core.exceptions.UnavailableApkTooOldException;
 import com.google.ar.core.exceptions.UnavailableArcoreNotInstalledException;
 import com.google.ar.core.exceptions.UnavailableDeviceNotCompatibleException;
 import com.google.ar.core.exceptions.UnavailableSdkTooOldException;
-import com.google.ar.core.exceptions.UnavailableUserDeclinedInstallationException;
 import com.google.common.base.Preconditions;
 import com.google.firebase.database.DatabaseError;
 
+import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.ByteBuffer;
-import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.Date;
+import java.util.Collection;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Set;
+import java.util.UUID;
 import java.util.stream.Collectors;
 
 /**
@@ -284,7 +288,7 @@ public class HelloArActivity extends AppCompatActivity implements SampleRender.R
     RESOLVE
   }
 
-  private RecordType recordType = RecordType.RESOLVE;
+  private RecordType recordType = RecordType.HOST;
 
   public enum AppState {
     Idle,
@@ -341,6 +345,15 @@ public class HelloArActivity extends AppCompatActivity implements SampleRender.R
   private int STORE_ARCORE_PLANES = 0;
 
   private String recording_name = "indoor_recording.mp4";
+
+  private UUID trackUUID = UUID.fromString("9584c0cc-7b88-4796-a7ad-e394a7f55b29");
+  private RecordingConfig recordingConfig;
+  private float[] touchCoordinate = new float[2];
+  private float[] imageHostingCoordinate = new float[] {-1, -1};
+
+  private boolean anchorTouched = false;
+  private boolean imageHostingTouched = false;
+  private boolean doneTouched = false;
 
   private TextView message_text;
 //  MainHandler mainHandler;
@@ -610,16 +623,28 @@ public class HelloArActivity extends AppCompatActivity implements SampleRender.R
 
     pauseARCoreSession();
 
-    // Configure the ARCore session to start recording.
-    RecordingConfig recordingConfig = new RecordingConfig(session)
-            .setMp4DatasetFilePath(mp4FilePath)
-            .setAutoStopOnPause(true);
+    if(recordType == RecordType.HOST){
+      Track track = new Track(session).setId(trackUUID);
+      // Configure the ARCore session to start recording.
+      recordingConfig = new RecordingConfig(session)
+              .setMp4DatasetFilePath(mp4FilePath)
+              .setAutoStopOnPause(true)
+              .addTrack(track);
+    }
+    else{
+      recordingConfig = new RecordingConfig(session)
+              .setMp4DatasetFilePath(mp4FilePath)
+              .setAutoStopOnPause(true);
+    }
+
+
+
 
     try {
       // Prepare the session for recording, but do not start recording yet.
       session.startRecording(recordingConfig);
       if(gtMode == GroundTruthMode.TRUE) {
-        groundTruthRecorder.recordBagStart(recordType + String.valueOf(scenario) );
+        groundTruthRecorder.recordBagStart(recordType + String.valueOf(scenario));
       }
     } catch (RecordingFailedException e) {
       Log.e(TAG, "startRecording - Failed to prepare to start recording", e);
@@ -762,6 +787,7 @@ public class HelloArActivity extends AppCompatActivity implements SampleRender.R
   @Override
   protected void onCreate(Bundle savedInstanceState) {
     super.onCreate(savedInstanceState);
+
     setContentView(R.layout.activity_main);
     surfaceView = findViewById(R.id.surfaceview);
 //    message_text = findViewById(R.id.messageText);
@@ -787,6 +813,9 @@ public class HelloArActivity extends AppCompatActivity implements SampleRender.R
                       @Override
                       public boolean onSingleTapUp(MotionEvent e) {
                         synchronized (singleTapLock) {
+                          if(recordType == RecordType.HOST){
+                            touchCoordinate = new float[] {e.getX(), e.getY()};
+                          }
                           if (currentMode == HostResolveMode.HOSTING) {
                             queuedSingleTap = e;
                           }
@@ -813,9 +842,9 @@ public class HelloArActivity extends AppCompatActivity implements SampleRender.R
     roomCodeText = findViewById(R.id.room_code_text);
 
 //    findViewById(R.id.playback_button).setVisibility(View.GONE);
-//    resolveButton.setVisibility(View.GONE);
-    hostButton.setVisibility(View.GONE);
-    imageHostButton.setVisibility(View.GONE);
+    resolveButton.setVisibility(View.GONE);
+//    hostButton.setVisibility(View.GONE);
+//    imageHostButton.setVisibility(View.GONE);
 
     // Initialize Cloud Anchor variables.
     firebaseManager = new FirebaseManager(this);
@@ -829,6 +858,7 @@ public class HelloArActivity extends AppCompatActivity implements SampleRender.R
     }
   }
 
+
   class ViewHandler extends Handler{
     @Override
     public void handleMessage(@NonNull Message msg){
@@ -836,6 +866,7 @@ public class HelloArActivity extends AppCompatActivity implements SampleRender.R
 
       Bundle bundle = msg.getData();
       String value = bundle.getString("value");
+      Log.d("yunho", value);
       if(value == "ImageHostButton"){
         onImageHostButtonPress();
       }
@@ -845,6 +876,25 @@ public class HelloArActivity extends AppCompatActivity implements SampleRender.R
       if(value == "ResolveButton"){
         onResolveButtonPress();
       }
+      if(value == "HostButton"){
+        onHostButtonPress();
+      }
+//      if(value == "TouchEvent"){
+//        float[] coordinates= bundle.getFloatArray("coordinate");
+//        long downTime = SystemClock.uptimeMillis();
+//        long eventTime = SystemClock.uptimeMillis() + 100;
+//        MotionEvent motionEvent = MotionEvent.obtain(
+//                downTime,
+//                eventTime,
+//                MotionEvent.ACTION_UP,
+//                coordinates[0],
+//                coordinates[1],
+//                0
+//        );
+////        Log.d("yunho-event", motionEvent.toString());
+//        gestureDetector.onTouchEvent(motionEvent);
+////        surfaceView.dispatchTouchEvent(motionEvent);
+//      }
     }
   }
 
@@ -1207,7 +1257,7 @@ public class HelloArActivity extends AppCompatActivity implements SampleRender.R
         if (counter > 10){
           Message message = viewHandler.obtainMessage();
           Bundle bundle = new Bundle();
-          bundle.putString("value", "ResolveButton");
+          bundle.putString("value", "HostButton");
           message.setData(bundle);
           viewHandler.sendMessage(message);
           resolveCalled = true;
@@ -1242,6 +1292,54 @@ public class HelloArActivity extends AppCompatActivity implements SampleRender.R
       return;
     }
     Camera camera = frame.getCamera();
+
+    if (appState == AppState.Recording){
+      try{
+        if(recordType == RecordType.HOST && imageHostingTouched == true){
+          ByteBuffer touchData = ByteBuffer.wrap(floatArrayToByteArray(imageHostingCoordinate));
+          Log.d("yunho-imagehosting", Arrays.toString(imageHostingCoordinate));
+          frame.recordTrackData(trackUUID, touchData);
+          imageHostingTouched = false;
+        }
+        if(recordType == RecordType.HOST && doneTouched == true){
+          ByteBuffer touchData = ByteBuffer.wrap(floatArrayToByteArray(imageHostingCoordinate));
+          Log.d("yunho-done", Arrays.toString(imageHostingCoordinate));
+          frame.recordTrackData(trackUUID, touchData);
+          doneTouched = false;
+        }
+      }catch(IOException e){
+        Log.e(TAG, "record touch event failed", e);
+      }
+    }
+
+    if (appState == AppState.Playingback){
+      Collection<TrackData> trackDataList = frame.getUpdatedTrackData(trackUUID);
+      for (TrackData trackData : trackDataList){
+        ByteBuffer bytes = trackData.getData();
+        touchCoordinate = byteBufferToFloatArray(bytes);
+        Log.d("yunho-coordinate", Arrays.toString(touchCoordinate));
+        if(Arrays.equals(touchCoordinate, imageHostingCoordinate)){
+          Message message = viewHandler.obtainMessage();
+          Bundle bundle = new Bundle();
+          bundle.putString("value", "ImageHostButton");
+          message.setData(bundle);
+          viewHandler.sendMessage(message);
+        }
+        else{
+          long downTime = SystemClock.uptimeMillis();
+          long eventTime = SystemClock.uptimeMillis() + 100;
+          MotionEvent motionEvent = MotionEvent.obtain(
+                  downTime,
+                  eventTime,
+                  MotionEvent.ACTION_UP,
+                  touchCoordinate[0],
+                  touchCoordinate[1],
+                  0
+          );
+          queuedSingleTap = motionEvent;
+        }
+      }
+    }
 
     // Update BackgroundRenderer state to match the depth settings.
     try {
@@ -1456,7 +1554,6 @@ public class HelloArActivity extends AppCompatActivity implements SampleRender.R
       float[] color;
       float[] borderColor;
       for(PlaneRender planeRender: planeRenders){
-        Log.d("yunho", Integer.toString(i));
         if(Arrays.binarySearch(colorBIndex, i) >= 0){
           color = planeAnchorColorB;
           borderColor= borderColorB;
@@ -1528,6 +1625,16 @@ public class HelloArActivity extends AppCompatActivity implements SampleRender.R
                   "We should only be creating an anchor in hosting mode.");
           for (HitResult hit : frame.hitTest(queuedSingleTap)) {
             if (shouldCreateAnchorWithHit(hit)) {
+              try{
+                if(recordType == RecordType.HOST && anchorTouched == false){
+                  ByteBuffer touchData = ByteBuffer.wrap(floatArrayToByteArray(touchCoordinate));
+                  Log.d("yunho-anchor", Arrays.toString(touchCoordinate));
+                  frame.recordTrackData(trackUUID, touchData);
+                  anchorTouched = true;
+                }
+              }catch(IOException e){
+                Log.e(TAG, "anchor record failed",e);
+              }
               Anchor newAnchor = hit.createAnchor();
               Preconditions.checkNotNull(hostListener, "The host listener cannot be null.");
               cloudManager.hostCloudAnchor(newAnchor, hostListener);
@@ -1569,27 +1676,33 @@ public class HelloArActivity extends AppCompatActivity implements SampleRender.R
       resetMode();
       return;
     }
-
-    if (!sharedPreferences.getBoolean(ALLOW_SHARE_IMAGES_KEY, false)) {
-      showNoticeDialog(this::onPrivacyAcceptedForHost);
-    } else {
+    if(appState == AppState.Recording || appState == AppState.Playingback){
       onPrivacyAcceptedForHost();
+    }
+    else{
+      if (!sharedPreferences.getBoolean(ALLOW_SHARE_IMAGES_KEY, false)) {
+        showNoticeDialog(this::onPrivacyAcceptedForHost);
+      } else {
+        onPrivacyAcceptedForHost();
+      }
     }
   }
 
   private void onImageHostButtonPress() {
     if (currentMode == HostResolveMode.HOSTINGDONE) {
+      imageHostingTouched=true;
       imageHostButton.setText(R.string.hosting_done);
       currentMode = HostResolveMode.PLANEHOSTING;
-      snackbarHelper.showMessageWithDismiss(this, getString(R.string.snackbar_on_host_image));
+//      snackbarHelper.showMessageWithDismiss(this, getString(R.string.snackbar_on_host_image));
       return;
     }
     else if (currentMode == HostResolveMode.PLANEHOSTING){
-      snackbarHelper.showMessageWithDismiss(this, getString(R.string.snackbar_on_host_image_done));
+      doneTouched=true;
+//      snackbarHelper.showMessageWithDismiss(this, getString(R.string.snackbar_on_host_image_done));
       STORE_ARCORE_PLANES = 1;
-      if(recentRoomCode != 0L){
-        remoteServerManager.sendRoomCode(recentRoomCode);
-      }
+//      if(recentRoomCode != 0L){
+//        remoteServerManager.sendRoomCode(recentRoomCode);
+//      }
       myResetMode();
       return;
     }
@@ -1605,7 +1718,8 @@ public class HelloArActivity extends AppCompatActivity implements SampleRender.R
     snackbarHelper.showMessageWithDismiss(this, getString(R.string.snackbar_on_host));
 
     hostListener = new RoomCodeAndCloudAnchorIdListener();
-    firebaseManager.getNewRoomCode(hostListener);
+    hostListener.onNewRoomCode(scenario);
+//    firebaseManager.getNewRoomCode(hostListener);
   }
 
   /** Callback function invoked when the Resolve Button is pressed. */
@@ -1614,15 +1728,10 @@ public class HelloArActivity extends AppCompatActivity implements SampleRender.R
       resetMode();
       return;
     }
-    if(appState == AppState.Recording || appState == AppState.Playingback){
-      onRoomCodeEntered(scenario);
-    }
-    else{
-      if (!sharedPreferences.getBoolean(ALLOW_SHARE_IMAGES_KEY, false)) {
-        showNoticeDialog(this::onPrivacyAcceptedForResolve);
-      } else {
-        onPrivacyAcceptedForResolve();
-      }
+    if (!sharedPreferences.getBoolean(ALLOW_SHARE_IMAGES_KEY, false)) {
+      showNoticeDialog(this::onPrivacyAcceptedForResolve);
+    } else {
+      onPrivacyAcceptedForResolve();
     }
   }
 
@@ -1646,9 +1755,9 @@ public class HelloArActivity extends AppCompatActivity implements SampleRender.R
   /** Resets the mode of the app to its initial state and removes the anchors. */
   private void resetMode() {
     hostButton.setText(R.string.host_button_text);
-//    hostButton.setEnabled(true);
+    hostButton.setEnabled(true);
     resolveButton.setText(R.string.resolve_button_text);
-    resolveButton.setEnabled(true);
+//    resolveButton.setEnabled(true);
     scenarioButton.setEnabled(true);
     imageHostButton.setText(R.string.host_image_button_text);
     imageHostButton.setVisibility(View.GONE);
@@ -1663,13 +1772,16 @@ public class HelloArActivity extends AppCompatActivity implements SampleRender.R
     planeRenders.clear();
     planeAnchors.clear();
     resolveCalled = false;
+    anchorTouched = false;
+    imageHostingTouched = false;
+    doneTouched = false;
   }
 
   private void myResetMode() {
     hostButton.setText(R.string.host_button_text);
-//    hostButton.setEnabled(true);
+    hostButton.setEnabled(true);
     resolveButton.setText(R.string.resolve_button_text);
-    resolveButton.setEnabled(true);
+//    resolveButton.setEnabled(true);
     scenarioButton.setEnabled(true);
     imageHostButton.setText(R.string.host_image_button_text);
     imageHostButton.setVisibility(View.GONE);
@@ -1680,15 +1792,18 @@ public class HelloArActivity extends AppCompatActivity implements SampleRender.R
     snackbarHelper.hide(this);
     cloudManager.clearListeners();
 //    resolveCalled = false;
+//    anchorTouched = false;
+//    imageHostingTouched = false;
+//    doneTouched = false;
   }
 
   /** Callback function invoked when the user presses the OK button in the Resolve Dialog. */
   private void onRoomCodeEntered(Long roomCode) {
     currentMode = HostResolveMode.RESOLVING;
-//    hostButton.setEnabled(false);
+    hostButton.setEnabled(false);
     resolveButton.setText(R.string.cancel);
     roomCodeText.setText(String.valueOf(roomCode));
-    snackbarHelper.showMessageWithDismiss(this, getString(R.string.snackbar_on_resolve));
+//    snackbarHelper.showMessageWithDismiss(this, getString(R.string.snackbar_on_resolve));
 
     // Register a new listener for the given room.
     firebaseManager.registerNewListenerForRoom(
@@ -1770,8 +1885,8 @@ public class HelloArActivity extends AppCompatActivity implements SampleRender.R
       Preconditions.checkState(roomCode == null, "The room code cannot have been set before.");
       roomCode = newRoomCode;
       roomCodeText.setText(String.valueOf(roomCode));
-      snackbarHelper.showMessageWithDismiss(
-              HelloArActivity.this, getString(R.string.snackbar_room_code_available));
+//      snackbarHelper.showMessageWithDismiss(
+//              HelloArActivity.this, getString(R.string.snackbar_room_code_available));
       checkAndMaybeShare();
       synchronized (singleTapLock) {
         // Change currentMode to HOSTING after receiving the room code (not when the 'Host' button
@@ -1951,5 +2066,37 @@ public class HelloArActivity extends AppCompatActivity implements SampleRender.R
     session.configure(config);
     cloudManager.setSession(session);
     hasSetTextureNames = false;
+  }
+
+  public static byte[] floatArrayToByteArray(float[] value) throws IOException {
+    int intBits =  Float.floatToIntBits(value[0]);
+    byte[] byteX = new byte[] {
+            (byte) (intBits >> 24),
+            (byte) (intBits >> 16),
+            (byte) (intBits >> 8),
+            (byte) (intBits) };
+    intBits =  Float.floatToIntBits(value[1]);
+    byte[] byteY = new byte[] {
+            (byte) (intBits >> 24),
+            (byte) (intBits >> 16),
+            (byte) (intBits >> 8),
+            (byte) (intBits) };
+
+    ByteArrayOutputStream outputStream = new ByteArrayOutputStream( );
+    outputStream.write(byteX);
+    outputStream.write(byteY);
+    return outputStream.toByteArray();
+  }
+
+  public static float[] byteBufferToFloatArray(ByteBuffer bytes) {
+    int intBitsX = bytes.get() << 24
+            | (bytes.get() & 0xFF) << 16
+            | (bytes.get() & 0xFF) << 8
+            | (bytes.get() & 0xFF);
+    int intBitsY = bytes.get() << 24
+            | (bytes.get() & 0xFF) << 16
+            | (bytes.get() & 0xFF) << 8
+            | (bytes.get() & 0xFF);
+    return new float[]{Float.intBitsToFloat(intBitsX), Float.intBitsToFloat(intBitsY)};
   }
 }
