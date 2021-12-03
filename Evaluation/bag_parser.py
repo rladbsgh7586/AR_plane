@@ -7,6 +7,7 @@ import datetime
 import rosbag
 import numpy as np
 import glob
+import re
 from sensor_msgs.msg import Image
 from cv_bridge import CvBridge
 
@@ -223,13 +224,23 @@ def get_todo_frames(timestamp_npy):
 
 if __name__ == "__main__":
     type = "RESOLVE"
-    scenario = 10
-    file_name = type + str(scenario)
-    save_path = "data/" + str(scenario) + "/"
+    lists = glob.glob("input_data/*.bag")
+    for file in lists:
+        if "HOST" in file:
+            type = "HOST"
+        if "RESOLVE" in file:
+            type = "RESOLVE"
+        scenario = re.sub(r'[^0-9]', '', file)
 
-    video2image(file_name+".mp4", save_path + "phone_image/")
-    bag2timestamp(file_name+".bag", save_path)
-    bag2img(file_name + ".bag", save_path)
-    bag2depth_img(file_name+".bag", save_path)
-    bag2depth_npy(file_name + ".bag", save_path)
-    bag2depth_ply(file_name + ".bag", save_path)
+        file_name = "input_data/" + type + str(scenario)
+        save_path = "data/" + type + str(scenario) + "/"
+
+        if os.path.exists(save_path):
+            continue
+
+        video2image(file_name+".mp4", save_path + "phone_image/")
+        bag2timestamp(file_name+".bag", save_path)
+        bag2img(file_name + ".bag", save_path)
+        bag2depth_img(file_name+".bag", save_path)
+        bag2depth_npy(file_name + ".bag", save_path)
+        bag2depth_ply(file_name + ".bag", save_path)

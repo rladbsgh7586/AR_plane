@@ -15,12 +15,12 @@ def download_device_data(room, image_path):
 
     file_prefix = "Image/" + str(room) + "/"
     blobs = storage_client.list_blobs('planeanchor.appspot.com', prefix=file_prefix, delimiter="/")
-
     inverse_model_view_matrix = []
     view_matrix = []
 
     image_num = 0
     try:
+        os.system("rm -r " + image_path)
         os.makedirs(image_path)
     except OSError:
         print('Error: Creating directory. ' + image_path)
@@ -33,10 +33,13 @@ def download_device_data(room, image_path):
             parsing_depth_image(file_path, image_path, blob.metadata['width'], blob.metadata['height'])
         if 'jpg' in file_path:
             image_num += 1
-            inverse_model_view_matrix.append(parsing_transformation_matrix(blob.metadata['inverseModelViewMatrix']))
-            view_matrix.append(parsing_transformation_matrix(blob.metadata['viewMatrix']))
+            try:
+                inverse_model_view_matrix.append(parsing_transformation_matrix(blob.metadata['inverseModelViewMatrix']))
+            except KeyError:
+                print("missed inverse model view matrix ", file_path)
+                os.remove(file_path)
+
     np.save(image_path + "inverse_model_view_matrix", inverse_model_view_matrix)
-    np.save(image_path + "view_matrix", view_matrix)
 
     preprocess_images(image_path)
 
@@ -145,7 +148,7 @@ def listen_device(host, port):
         server_sock.close()
 
 
-def test_plane_anchor(room_num, skip_download=False, skip_inference=False):
+def test_plane_anchor(room_num, skip_download=False, skip_inference=False, version="Ours"):
     image_path = "./smartphone_indoor/" + str(room_num) + "/"
     if skip_download == False:
         download_device_data(room_num, image_path)
@@ -153,12 +156,15 @@ def test_plane_anchor(room_num, skip_download=False, skip_inference=False):
     save_camera_intrinsic(image_path)
     if skip_inference == False:
         run_model(room_num)
-    host_plane(room_num, total_image_number)
+    host_plane(room_num, total_image_number, version)
 
 
 if __name__ == "__main__":
     host = "192.168.1.16"
     port = 7586
     # listen_device(host, port)
-    test_plane_anchor(room_num=10, skip_download=True, skip_inference=False)
-
+    print("hi")
+    # test_plane_anchor(room_num=6, skip_download=False, skip_inference=False, version="PlaneRCNN")
+    # test_plane_anchor(room_num=2, skip_download=True, skip_inference=True, version="PlaneRCNN")
+    # test_plane_anchor(room_num=2, skip_download=False, skip_inference=False, version="Ours")
+    test_plane_anchor(room_num=2, skip_download=True, skip_inference=True, version="Ours")

@@ -34,9 +34,11 @@ import com.google.firebase.database.Transaction;
 import com.google.firebase.database.ValueEventListener;
 import com.google.android.gms.tasks.OnSuccessListener;
 import com.google.firebase.storage.FirebaseStorage;
+import com.google.firebase.storage.StorageMetadata;
 import com.google.firebase.storage.StorageReference;
 import com.google.firebase.storage.UploadTask;
 
+import java.nio.FloatBuffer;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
@@ -231,10 +233,29 @@ class FirebaseManager {
         return hotspotListRef.child(String.valueOf(roomCode)).child("plane_anchors");
     }
 
-    void uploadImage(byte[] file, String fileName){
+    void uploadImage(byte[] file, String fileName, float[] invModelViewMatrix){
         Log.d("yunho-name", currentRoomImgRef.getName());
         Log.d("yunho-name", currentRoomImgRef.getPath());
+        StorageMetadata metadata = new StorageMetadata.Builder()
+                .setCustomMetadata("inverseModelViewMatrix", Arrays.toString(invModelViewMatrix))
+                .build();
         UploadTask uploadTask = currentRoomImgRef.child(fileName+".jpg").putBytes(file);
+        uploadTask.addOnFailureListener(new OnFailureListener() {
+            @Override
+            public void onFailure(Exception e) {
+            }
+        }).addOnSuccessListener(new OnSuccessListener<UploadTask.TaskSnapshot>() {
+            @Override
+            public void onSuccess(UploadTask.TaskSnapshot taskSnapshot) {
+                currentRoomImgRef.child(fileName+".jpg").updateMetadata(metadata);
+                // taskSnapshot.getMetadata() contains file metadata such as size, content-type, etc.
+                // ...
+            }
+        });
+    };
+
+    void uploadPCD(byte[] file, String fileName){
+        UploadTask uploadTask = currentRoomImgRef.child(fileName+"_pcd.txt").putBytes(file);
         uploadTask.addOnFailureListener(new OnFailureListener() {
             @Override
             public void onFailure(Exception e) {

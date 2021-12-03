@@ -9,8 +9,9 @@ def run_model(room_num):
     args.dataset = 'inference'
     args.customDataFolder = 'smartphone_indoor/' + str(room_num)
     args.test_dir = 'inference/' + str(room_num)
-    if not os.path.exists(args.test_dir):
+    try:
+        os.system("rm -r " + args.test_dir)
         os.system("mkdir -p %s" % args.test_dir)
-        pass
-
+    except OSError:
+        print('Error: Creating directory. ' + args.test_dir)
     evaluate(args)

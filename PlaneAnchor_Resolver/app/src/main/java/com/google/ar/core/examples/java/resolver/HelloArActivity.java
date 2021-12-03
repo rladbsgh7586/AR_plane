@@ -336,7 +336,7 @@ public class HelloArActivity extends AppCompatActivity implements SampleRender.R
 
   // Tracks app's specific state changes.
   private AppState appState = AppState.Idle;
-  private GroundTruthMode gtMode = GroundTruthMode.TRUE;
+  private GroundTruthMode gtMode = GroundTruthMode.FALSE;
   private int REQUEST_MP4_SELECTOR = 1;
   private int STORE_ARCORE_PLANES = 0;
 

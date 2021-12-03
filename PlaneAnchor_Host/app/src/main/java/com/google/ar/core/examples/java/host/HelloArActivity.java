@@ -118,6 +118,7 @@ import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.ByteBuffer;
+import java.nio.FloatBuffer;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
@@ -271,13 +272,15 @@ public class HelloArActivity extends AppCompatActivity implements SampleRender.R
   private final float[] projectionMatrix = new float[16];
   private final float[] modelViewMatrix = new float[16]; // view x model
   private final float[] modelViewProjectionMatrix = new float[16]; // projection x view x model
+  private final float[] ViewProjectionMatrix = new float[16]; // view x model
+  private final float[] invModelViewMatrix = new float[16]; // projection x view x model
   private final float[] sphericalHarmonicsCoefficients = new float[9 * 3];
   private final float[] viewInverseMatrix = new float[16];
   private final float[] worldLightDirection = {0.0f, 0.0f, 0.0f, 0.0f};
   private final float[] viewLightDirection = new float[4]; // view x world light direction
 
   private Set<Integer> previousKeyFrameIds = new HashSet<Integer>(0);
-  private int keyFrameThreshold = 30;
+  private int keyFrameThreshold = 10;
   private int keyFrameCount = 0;
   private int counter = 0;
   private long scenario = 0;
@@ -1425,6 +1428,9 @@ public class HelloArActivity extends AppCompatActivity implements SampleRender.R
     // Use try-with-resources to automatically release the point cloud.
     try (PointCloud pointCloud = frame.acquirePointCloud()) {
       if (pointCloud.getTimestamp() > lastPointCloudTimestamp) {
+        Matrix.multiplyMM(modelViewProjectionMatrix, 0, projectionMatrix, 0, viewMatrix, 0);
+        pointCloudShader.setMat4("u_ModelViewProjection", modelViewProjectionMatrix);
+
         pointCloudVertexBuffer.set(pointCloud.getPoints());
         lastPointCloudTimestamp = pointCloud.getTimestamp();
         if (currentMode == HostResolveMode.PLANEHOSTING){
@@ -1443,8 +1449,15 @@ public class HelloArActivity extends AppCompatActivity implements SampleRender.R
               try{
                 Image keyFrame = frame.acquireCameraImage();
                 byte[] jpegData = ImageHelper.imageToByteArray(keyFrame);
+//                Matrix.multiplyMM(ViewProjectionMatrix, 0, projectionMatrix, 0, viewMatrix, 0);
+                byte[] transformed_pcd = transformPointCloud(pointCloud.getPoints(), viewMatrix);
+//                byte[] pcd = pointCloudToByteArray(transformed_pcd);
                 Log.d("yunho", "keyFrameSelected "+Integer.toString(keyFrameCount));
-                firebaseManager.uploadImage(jpegData, Integer.toString(keyFrameCount));
+                anchor.getPose().toMatrix(modelMatrix, 0);
+                Matrix.multiplyMM(modelViewMatrix, 0, viewMatrix, 0, modelMatrix, 0);
+                Matrix.invertM(invModelViewMatrix, 0, modelViewMatrix, 0);
+                firebaseManager.uploadImage(jpegData, String.format("%03d", keyFrameCount), invModelViewMatrix);
+                firebaseManager.uploadPCD(transformed_pcd, String.format("%03d", keyFrameCount));
                 keyFrame.close();
               }
               catch(Exception e){
@@ -1455,8 +1468,6 @@ public class HelloArActivity extends AppCompatActivity implements SampleRender.R
         }
 
       }
-      Matrix.multiplyMM(modelViewProjectionMatrix, 0, projectionMatrix, 0, viewMatrix, 0);
-      pointCloudShader.setMat4("u_ModelViewProjection", modelViewProjectionMatrix);
       render.draw(pointCloudMesh, pointCloudShader);
     }
 
@@ -2099,4 +2110,39 @@ public class HelloArActivity extends AppCompatActivity implements SampleRender.R
             | (bytes.get() & 0xFF);
     return new float[]{Float.intBitsToFloat(intBitsX), Float.intBitsToFloat(intBitsY)};
   }
+
+  public static byte[] transformPointCloud(FloatBuffer pcd, float[] viewMatrix){
+    float[] PCD = new float[pcd.capacity()];
+    pcd.get(PCD);
+    float[] transformedPCD = new float[pcd.capacity()];
+    float[] xyz = new float[4];
+    float[] transformed_xyz = new float[4];
+    Log.d("yunho", Integer.toString(pcd.capacity()));
+    for(int i = 0; i < pcd.capacity()/4; i++){
+        for(int j = 0; j < 3; j ++){
+          xyz[j] = PCD[i*4 + j];
+        }
+        xyz[3] = 1;
+        Log.d("yunho-before", Arrays.toString(xyz));
+        Matrix.multiplyMV(transformed_xyz, 0, viewMatrix, 0, xyz, 0);
+        Log.d("yunho-after", Arrays.toString(transformed_xyz));
+        for(int j = 0; j < 3; j ++){
+          transformedPCD[i*4 + j] = transformed_xyz[j];
+        }
+        transformedPCD[i*4 + 3] = pcd.get(i*4 + 3);
+    }
+//    Log.d("yunho-PCD", Arrays.toString(transformedPCD));
+    ByteBuffer byteBuffer = ByteBuffer.allocate(transformedPCD.length * 4);
+    byteBuffer.asFloatBuffer().put(transformedPCD);
+    byte[] bytearray = byteBuffer.array();
+//    Log.d("yunho-byte", Arrays.toString(bytearray));
+    return bytearray;
+  }
+
+//  public static byte[] pointCloudToByteArray(FloatBuffer pcd){
+//    ByteBuffer byteBuffer = ByteBuffer.allocate(pcd.capacity() * 4);
+//    byteBuffer.asFloatBuffer().put(pcd);
+//    byte[] bytearray = byteBuffer.array();
+//    return bytearray;
+//  }
 }
