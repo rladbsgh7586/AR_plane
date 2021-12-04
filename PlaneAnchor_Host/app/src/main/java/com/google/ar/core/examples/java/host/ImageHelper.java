@@ -1,9 +1,13 @@
 package com.google.ar.core.examples.java.host;
 
+import android.graphics.Bitmap;
+import android.graphics.Canvas;
 import android.graphics.ImageFormat;
 import android.graphics.Rect;
 import android.graphics.YuvImage;
 import android.media.Image;
+import android.view.SurfaceView;
+import android.view.View;
 
 import java.io.ByteArrayOutputStream;
 import java.nio.ByteBuffer;

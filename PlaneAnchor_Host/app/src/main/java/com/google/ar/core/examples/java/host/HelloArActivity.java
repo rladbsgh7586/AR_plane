@@ -1255,8 +1255,8 @@ public class HelloArActivity extends AppCompatActivity implements SampleRender.R
       return;
     }
     if (appState == AppState.Playingback || appState == AppState.Recording){
+      counter += 1;
       if (resolveCalled == false){
-        counter += 1;
         if (counter > 10){
           Message message = viewHandler.obtainMessage();
           Bundle bundle = new Bundle();
@@ -1456,7 +1456,7 @@ public class HelloArActivity extends AppCompatActivity implements SampleRender.R
                 anchor.getPose().toMatrix(modelMatrix, 0);
                 Matrix.multiplyMM(modelViewMatrix, 0, viewMatrix, 0, modelMatrix, 0);
                 Matrix.invertM(invModelViewMatrix, 0, modelViewMatrix, 0);
-                firebaseManager.uploadImage(jpegData, String.format("%03d", keyFrameCount), invModelViewMatrix);
+                firebaseManager.uploadImage(jpegData, String.format("%03d", keyFrameCount), invModelViewMatrix, Long.toString(frame.getAndroidCameraTimestamp()));
                 firebaseManager.uploadPCD(transformed_pcd, String.format("%03d", keyFrameCount));
                 keyFrame.close();
               }
@@ -1786,6 +1786,7 @@ public class HelloArActivity extends AppCompatActivity implements SampleRender.R
     anchorTouched = false;
     imageHostingTouched = false;
     doneTouched = false;
+    counter = 0;
   }
 
   private void myResetMode() {

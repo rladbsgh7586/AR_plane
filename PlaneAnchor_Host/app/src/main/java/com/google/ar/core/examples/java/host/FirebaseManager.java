@@ -233,11 +233,12 @@ class FirebaseManager {
         return hotspotListRef.child(String.valueOf(roomCode)).child("plane_anchors");
     }
 
-    void uploadImage(byte[] file, String fileName, float[] invModelViewMatrix){
+    void uploadImage(byte[] file, String fileName, float[] invModelViewMatrix, String timestamp){
         Log.d("yunho-name", currentRoomImgRef.getName());
         Log.d("yunho-name", currentRoomImgRef.getPath());
         StorageMetadata metadata = new StorageMetadata.Builder()
                 .setCustomMetadata("inverseModelViewMatrix", Arrays.toString(invModelViewMatrix))
+                .setCustomMetadata("timestamp", timestamp)
                 .build();
         UploadTask uploadTask = currentRoomImgRef.child(fileName+".jpg").putBytes(file);
         uploadTask.addOnFailureListener(new OnFailureListener() {

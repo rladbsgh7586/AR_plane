@@ -225,6 +225,7 @@ def get_todo_frames(timestamp_npy):
 if __name__ == "__main__":
     type = "RESOLVE"
     lists = glob.glob("input_data/*.bag")
+    print(lists)
     for file in lists:
         if "HOST" in file:
             type = "HOST"

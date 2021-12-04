@@ -20,6 +20,8 @@ import android.content.Context;
 import android.opengl.Matrix;
 import android.util.Log;
 
+import androidx.annotation.NonNull;
+
 import com.google.android.gms.tasks.OnFailureListener;
 import com.google.ar.core.Anchor;
 import com.google.ar.core.Plane;
@@ -34,6 +36,8 @@ import com.google.firebase.database.Transaction;
 import com.google.firebase.database.ValueEventListener;
 import com.google.android.gms.tasks.OnSuccessListener;
 import com.google.firebase.storage.FirebaseStorage;
+import com.google.firebase.storage.ListResult;
+import com.google.firebase.storage.StorageMetadata;
 import com.google.firebase.storage.StorageReference;
 import com.google.firebase.storage.UploadTask;
 
@@ -83,6 +87,7 @@ class FirebaseManager {
     private FirebaseStorage storage = null;
     private StorageReference storageImgRef = null;
     private StorageReference currentRoomImgRef = null;
+    private StorageReference currentRoomPredictImgRef = null;
     private ArrayList<String> planeID = new ArrayList<>();
 
     /**
@@ -148,12 +153,17 @@ class FirebaseManager {
         DatabaseReference roomRef = hotspotListRef.child(String.valueOf(roomCode));
         currentRoomRef = hotspotListRef.child(String.valueOf(roomCode));
         currentRoomImgRef = storageImgRef.child(String.valueOf(roomCode));
-        Log.d("yunho-storageRoomImgRef", "HI");
-        Log.d("yunho-storageRoomImgRef", currentRoomImgRef.getName());
-        Log.d("yunho-storageRoomImgRef", currentRoomImgRef.getPath());
+        currentRoomPredictImgRef = storageImgRef.child(roomCode+"_predict");
         roomRef.child(KEY_DISPLAY_NAME).setValue(DISPLAY_NAME_VALUE);
         roomRef.child(KEY_ANCHOR_ID).setValue(cloudAnchorId);
         roomRef.child(KEY_TIMESTAMP).setValue(System.currentTimeMillis());
+    }
+
+    void setRoomCode(Long roomCode){
+        DatabaseReference roomRef = hotspotListRef.child(String.valueOf(roomCode));
+        currentRoomRef = hotspotListRef.child(String.valueOf(roomCode));
+        currentRoomImgRef = storageImgRef.child(String.valueOf(roomCode));
+        currentRoomPredictImgRef = storageImgRef.child(roomCode+"_predict");
     }
 
     /**
@@ -232,8 +242,6 @@ class FirebaseManager {
     }
 
     void uploadImage(byte[] file, String fileName){
-        Log.d("yunho-name", currentRoomImgRef.getName());
-        Log.d("yunho-name", currentRoomImgRef.getPath());
         UploadTask uploadTask = currentRoomImgRef.child(fileName+".jpg").putBytes(file);
         uploadTask.addOnFailureListener(new OnFailureListener() {
             @Override
@@ -247,6 +255,21 @@ class FirebaseManager {
             }
         });
     };
+
+    public void uploadPredictedImage(byte[] file, String fileName){
+        UploadTask uploadTask = currentRoomPredictImgRef.child(fileName+".jpg").putBytes(file);
+        uploadTask.addOnFailureListener(new OnFailureListener() {
+            @Override
+            public void onFailure(Exception e) {
+            }
+        }).addOnSuccessListener(new OnSuccessListener<UploadTask.TaskSnapshot>() {
+            @Override
+            public void onSuccess(UploadTask.TaskSnapshot taskSnapshot) {
+                // taskSnapshot.getMetadata() contains file metadata such as size, content-type, etc.
+                // ...
+            }
+        });
+    }
 
     float[] planeMatrix = new float[16];
     float[] anchorMatrix = new float[16];
@@ -313,5 +336,40 @@ class FirebaseManager {
             currentRoomListener = null;
             currentRoomRef = null;
         }
+    }
+
+    public ArrayList<Long> readFrameTimestamps(){
+        ArrayList<Long> frameTimestamps = new ArrayList<>();
+        currentRoomImgRef.listAll()
+                .addOnSuccessListener(new OnSuccessListener<ListResult>() {
+                    @Override
+                    public void onSuccess(ListResult listResult) {
+                        for (StorageReference item : listResult.getItems()) {
+                            // All the items under listRef.
+                            Log.d("yunho_item_name", item.getName());
+                            if(item.getName().contains(".jpg")){
+                                item.getMetadata().addOnSuccessListener(new OnSuccessListener<StorageMetadata>() {
+                                    @Override
+                                    public void onSuccess(StorageMetadata storageMetadata) {
+                                        // Metadata now contains the metadata for 'images/forest.jpg'
+                                        frameTimestamps.add(Long.parseLong(storageMetadata.getCustomMetadata("timestamp")));
+                                    }
+                                }).addOnFailureListener(new OnFailureListener() {
+                                    @Override
+                                    public void onFailure(@NonNull Exception exception) {
+                                        // Uh-oh, an error occurred!
+                                    }
+                                });
+                            }
+                        }
+                    }
+                })
+                .addOnFailureListener(new OnFailureListener() {
+                    @Override
+                    public void onFailure(@NonNull Exception e) {
+                        // Uh-oh, an error occurred!
+                    }
+                });
+        return frameTimestamps;
     }
 }

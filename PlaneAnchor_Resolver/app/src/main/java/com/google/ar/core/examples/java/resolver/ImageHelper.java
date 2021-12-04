@@ -1,10 +1,17 @@
 package com.google.ar.core.examples.java.resolver;
 
+import android.graphics.Bitmap;
+import android.graphics.Canvas;
 import android.graphics.ImageFormat;
 import android.graphics.Rect;
 import android.graphics.YuvImage;
 import android.media.Image;
+import android.os.Handler;
+import android.os.HandlerThread;
 import android.util.Log;
+import android.view.PixelCopy;
+import android.view.SurfaceView;
+import android.view.View;
 
 import java.io.BufferedOutputStream;
 import java.io.ByteArrayOutputStream;
@@ -69,5 +76,28 @@ public class ImageHelper {
         YuvImage yuv = new YuvImage(nv21, ImageFormat.NV21, width, height, null);
         yuv.compressToJpeg(new Rect(0, 0, width, height), 100, out);
         return out.toByteArray();
+    }
+
+    public static Bitmap viewToBitmap(View view) {
+        Bitmap bitmap = Bitmap.createBitmap(view.getWidth(),
+                view.getHeight(), Bitmap.Config.ARGB_8888);
+
+        final HandlerThread handlerThread = new HandlerThread("PixelCopier");
+        handlerThread.start();
+        PixelCopy.OnPixelCopyFinishedListener listener = new PixelCopy.OnPixelCopyFinishedListener() {
+            @Override
+            public void onPixelCopyFinished(int copyResult) {
+
+            }
+        };
+        PixelCopy.request((SurfaceView) view, bitmap, listener, new Handler(handlerThread.getLooper()));
+        return bitmap;
+    }
+
+    public static byte[] bitmapToJPEG(Bitmap bmp){
+        ByteArrayOutputStream stream = new ByteArrayOutputStream();
+        bmp.compress(Bitmap.CompressFormat.JPEG, 100, stream);
+        byte[] byteArray = stream.toByteArray();
+        return byteArray;
     }
 }

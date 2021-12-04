@@ -278,6 +278,7 @@ public class HelloArActivity extends AppCompatActivity implements SampleRender.R
   private int counter = 0;
   private long scenario = 0;
   private ViewHandler viewHandler;
+  private ArrayList<Long> frameTimestamps;
 
   public enum RecordType{
     HOST,
@@ -302,7 +303,8 @@ public class HelloArActivity extends AppCompatActivity implements SampleRender.R
 
   private enum GroundTruthMode {
     TRUE,
-    FALSE
+    FALSE,
+    CAPTURE
   }
 
   // Locks needed for synchronization
@@ -336,7 +338,7 @@ public class HelloArActivity extends AppCompatActivity implements SampleRender.R
 
   // Tracks app's specific state changes.
   private AppState appState = AppState.Idle;
-  private GroundTruthMode gtMode = GroundTruthMode.FALSE;
+  private GroundTruthMode gtMode = GroundTruthMode.CAPTURE;
   private int REQUEST_MP4_SELECTOR = 1;
   private int STORE_ARCORE_PLANES = 0;
 
@@ -544,6 +546,11 @@ public class HelloArActivity extends AppCompatActivity implements SampleRender.R
     lastPointCloudTimestamp = 0;
     if (mp4FilePath == null)
       return false;
+
+    if (gtMode == GroundTruthMode.CAPTURE){
+      firebaseManager.setRoomCode(scenario);
+      frameTimestamps = firebaseManager.readFrameTimestamps();
+    }
 
     Log.d(TAG, "startPlayingback at:" + mp4FilePath);
 
@@ -1215,6 +1222,7 @@ public class HelloArActivity extends AppCompatActivity implements SampleRender.R
       }
     }
 
+
     // Texture names should only be set once on a GL thread unless they change. This is done during
     // onDrawFrame rather than onSurfaceCreated since the session is not guaranteed to have been
     // initialized during the execution of onSurfaceCreated.
@@ -1242,6 +1250,15 @@ public class HelloArActivity extends AppCompatActivity implements SampleRender.R
       return;
     }
     Camera camera = frame.getCamera();
+    if(gtMode == GroundTruthMode.CAPTURE && appState == AppState.Playingback){
+      if(frameTimestamps.contains(frame.getAndroidCameraTimestamp())){
+        keyFrameCount += 1;
+        Log.d("yunho-timestamp", Long.toString(frame.getAndroidCameraTimestamp()));
+        Bitmap bitmap = ImageHelper.viewToBitmap(surfaceView);
+        byte[] jpeg = ImageHelper.bitmapToJPEG(bitmap);
+        firebaseManager.uploadPredictedImage(jpeg, String.format("%03d_predict", keyFrameCount));
+      }
+    }
 
     // Update BackgroundRenderer state to match the depth settings.
     try {
@@ -1456,7 +1473,6 @@ public class HelloArActivity extends AppCompatActivity implements SampleRender.R
       float[] color;
       float[] borderColor;
       for(PlaneRender planeRender: planeRenders){
-        Log.d("yunho", Integer.toString(i));
         if(Arrays.binarySearch(colorBIndex, i) >= 0){
           color = planeAnchorColorB;
           borderColor= borderColorB;
