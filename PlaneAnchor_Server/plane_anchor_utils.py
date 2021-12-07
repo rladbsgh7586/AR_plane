@@ -41,6 +41,8 @@ def get_2d_center_coordinate(mask):
 def normal_to_rotation_matrix(plane_normal):
     camera_normal = [0, 1, 0]
 
+    rotation_matrix = rotation_matrix_from_vectors(camera_normal, plane_normal)
+    return rotation_matrix
     if abs(plane_normal[1]) > abs(plane_normal[0]):
         plane_normal[0] = 0
         plane_normal = plane_normal / np.linalg.norm(plane_normal)

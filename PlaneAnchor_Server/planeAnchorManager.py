@@ -163,8 +163,9 @@ if __name__ == "__main__":
     host = "192.168.1.16"
     port = 7586
     # listen_device(host, port)
-    print("hi")
-    test_plane_anchor(room_num=2, skip_download=False, skip_inference=False, version="PlaneRCNN")
+    # test_plane_anchor(room_num=4, skip_download=False, skip_inference=False, version="PlaneRCNN")
+    # test_plane_anchor(room_num=2, skip_download=False, skip_inference=False, version="PlaneRCNN")
     # test_plane_anchor(room_num=2, skip_download=True, skip_inference=True, version="PlaneRCNN")
+    test_plane_anchor(room_num=2, skip_download=True, skip_inference=True, version="GT")
     # test_plane_anchor(room_num=2, skip_download=False, skip_inference=False, version="Ours")
     # test_plane_anchor(room_num=2, skip_download=True, skip_inference=True, version="Ours")

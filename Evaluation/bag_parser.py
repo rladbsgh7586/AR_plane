@@ -5,6 +5,7 @@ import pyrealsense2 as rs
 import time
 import datetime
 import rosbag
+import sys
 import numpy as np
 import glob
 import re
@@ -29,6 +30,7 @@ def video2image(video_name, save_path):
         success, image = vidcap.read()
         if not success:
             break
+        print("hi")
         fname = "{}.jpg".format("{0:05d}".format(count))
         img90 = cv2.rotate(image, cv2.ROTATE_90_CLOCKWISE)
         img = img90[80:560, :, :]
@@ -96,7 +98,6 @@ def bag2img(file_name, save_path):
     config.enable_stream(rs.stream.color, rs.format.rgb8, 15)
     pipeline.start(config)
     colorizer = rs.colorizer()
-
     count = 0
 
     timestamp_npy = np.load(save_path + "timestamp.npy")
@@ -108,7 +109,7 @@ def bag2img(file_name, save_path):
         if frame_num not in todo_frames:
             continue
         color_frame = np.asanyarray(frames.get_color_frame().get_data())
-        cv2.imwrite(os.path.join(img_path, "frame%06i.png" % frame_num), cv2.cvtColor(color_frame, cv2.COLOR_RGB2BGR))
+        cv2.imwrite(os.path.join(img_path, "%06i.jpg" % frame_num), cv2.cvtColor(color_frame, cv2.COLOR_RGB2BGR))
 
         todo_frames.remove(frame_num)
 
@@ -233,15 +234,19 @@ if __name__ == "__main__":
             type = "RESOLVE"
         scenario = re.sub(r'[^0-9]', '', file)
 
+        scenario = 2
         file_name = "input_data/" + type + str(scenario)
         save_path = "data/" + type + str(scenario) + "/"
 
-        if os.path.exists(save_path):
-            continue
 
-        video2image(file_name+".mp4", save_path + "phone_image/")
-        bag2timestamp(file_name+".bag", save_path)
+        # if os.path.exists(save_path):
+        #     continue
+
+        # video2image(file_name+".mp4", save_path + "phone_image/")
+        # bag2timestamp(file_name+".bag", save_path)
         bag2img(file_name + ".bag", save_path)
-        bag2depth_img(file_name+".bag", save_path)
-        bag2depth_npy(file_name + ".bag", save_path)
-        bag2depth_ply(file_name + ".bag", save_path)
+        # bag2depth_img(file_name+".bag", save_path)
+        # bag2depth_npy(file_name + ".bag", save_path)
+        # bag2depth_ply(file_name + ".bag", save_path)
+
+        break

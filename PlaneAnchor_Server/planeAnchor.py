@@ -9,7 +9,7 @@ from plane_anchor_utils import *
 
 
 def host_plane(room_number, total_image_number, version):
-    plane_size_threshold = 0.1
+    plane_size_threshold = 0.01
     sampled_point_threshold = 5
     zero_padding_pixel = 80
     cred = credentials.Certificate('firebase_key.json')
@@ -29,15 +29,21 @@ def host_plane(room_number, total_image_number, version):
     camera_intrinsics = np.loadtxt(data_directory + "camera.txt")
     for num in range(total_image_number):
         print("----------------" + str(num) + "----------------")
-        plane_mask = np.load(result_directory +  str(num) + "_plane_masks_0.npy")
+        plane_mask = np.load(result_directory + str(num) + "_plane_masks_0.npy")
         threshold = plane_size_threshold * np.size(plane_mask[0])
         plane_parameters = np.load(result_directory + str(num) + "_plane_parameters_0.npy")
         point_cloud = get_point_cloud(data_directory + "%03i" % (num + 1) + "_pcd.txt", 0.5)
-        # plot_points(point_cloud, [])
         projected_point_cloud = get_projected_point_cloud(point_cloud)
         im = pilimg.open(result_directory + str(num) + "_image_0.png")
         image_path = result_directory + str(num) + "_image_mask"
         image_pixel = np.array(im)
+
+        to_save_plane_parameter = []
+        if version == "GT":
+            gt_path = "../Evaluation/data/HOST%i/eval/" % room_number
+            plane_mask = np.load(gt_path + "depth_gt/%03i_masks.npy" % (num+1))
+            plane_parameters = np.load(gt_path + "depth_gt/%03i_params.npy" % (num+1))
+            print(np.shape(plane_mask))
 
         for i in range(plane_mask.shape[0]):
             mask = result_zero_padding(plane_mask[i], zero_padding_pixel)
@@ -45,25 +51,33 @@ def host_plane(room_number, total_image_number, version):
                 continue
             temp_image_path = image_path + str(i) + ".png"
             if version == "Ours":
-                transformation_matrix, width, height = get_plane_matrix_ours(mask, camera_intrinsics, point_cloud,
+                transformation_matrix, width, height, param = get_plane_matrix_ours(mask, camera_intrinsics, point_cloud,
                                                                     projected_point_cloud, image_pixel, temp_image_path,
                                                                     sampled_point_threshold)
             if version == "PlaneRCNN":
-                transformation_matrix, width, height = get_plane_matrix_planercnn(mask, camera_intrinsics, image_pixel, plane_parameters[i],
+                transformation_matrix, width, height, param = get_plane_matrix_planercnn(mask, camera_intrinsics, image_pixel, plane_parameters[i],
                                                                         temp_image_path)
+
+            if version == "GT":
+                print(np.sum(plane_parameters[i]))
+                if np.sum(plane_parameters[i]) == 0:
+                    continue
+                transformation_matrix, width, height, param = get_plane_matrix_gt(mask, image_pixel, plane_parameters[i], temp_image_path)
 
             if width != 0:
                 plane_number += 1
                 plane_name = 'plane' + "%03i" % plane_number
+                to_save_plane_parameter.append(param)
                 transformation_matrix = np.transpose(transformation_matrix)
                 print("--------------",plane_number)
-                print(inv_model_view_matrix[num])
                 transformation_matrix = np.dot(transformation_matrix, inv_model_view_matrix[num])
                 dir.child('plane_anchors').child(plane_name).update(
                     {'transformation_matrix': list(transformation_matrix.reshape(-1))})
                 dir.child('plane_anchors').child(plane_name).update({'width': width})
                 dir.child('plane_anchors').child(plane_name).update({'height': height})
                 dir.update({'plane_number': plane_number})
+        if version != "GT":
+            np.save(data_directory + "%03i_param" % num, to_save_plane_parameter)
 
 
 def result_zero_padding(plane_mask, zero_padding_pixel):
@@ -138,23 +152,16 @@ def get_plane_matrix_ours(mask, camera, point_cloud, projected_point_cloud, imag
     # plot_points(point_cloud, sampled_point_index)
     if len(sampled_point_index) > sampled_point_threshold:
         plane_normal, offset, centroid = plane_points_svd(point_cloud, sampled_point_index)
-        # print(plane_normal, offset)
         plot_points(point_cloud, sampled_point_index)
         center_3d = get_3d_point(convert_to_normal_coordinate(center_x, center_y, camera), plane_normal, offset)
-        # center_3d = get_3d_plane_center(rect, plane_normal, offset)
         if center_3d[2] < -10 or center_3d[2] > 0:
             return 0, 0, 0
         print("center: ",center_3d)
         width = abs(rect.get_width() * center_3d[2])
         height = abs(rect.get_height() * center_3d[2])
 
-
-        # plane_normal = plane_normal / np.linalg.norm(plane_normal)
-        # rotation_matrix = rotation_matrix_from_vectors(camera_normal, plane_normal)
         rotation_matrix = normal_to_rotation_matrix(np.array(plane_normal))
         print("plane_normal", plane_normal)
-        # print("normal", np.dot(rotation_matrix, [camera_normal[0],camera_normal[1],camera_normal[2],0]))
-        # print("sub_normal", np.dot(rotation_matrix, [sub_normal[0], sub_normal[1], sub_normal[2], 0]))
 
         center_translation = np.array([[1, 0, 0, center_3d[0]],
                                        [0, 1, 0, center_3d[1]],
@@ -162,8 +169,8 @@ def get_plane_matrix_ours(mask, camera, point_cloud, projected_point_cloud, imag
                                        [0, 0, 0, 1]])
 
         transformation_matrix = get_transformation_matrix(rotation_matrix, center_translation)
-        return transformation_matrix, width, height
-    return 0, 0, 0
+        return transformation_matrix, width, height, plane_normal * offset
+    return 0, 0, 0, 0
 
 def get_plane_matrix_planercnn(mask, camera, image, plane_parameter, image_path):
     # get 2d center coordinate
@@ -171,24 +178,16 @@ def get_plane_matrix_planercnn(mask, camera, image, plane_parameter, image_path)
     # plane range in normal coordinate [l, r, t, b]
     rect = extract_rect(center_x, center_y, mask, camera, image, image_path)
 
-    # plane_normal, offset, centroid = plane_points_svd(point_cloud, sampled_point_index)
-    # print(plane_normal)
-    # plot_points(point_cloud, sampled_point_index)
     plane_normal, offset = parsing_plane_parameter(plane_parameter)
     center_3d = get_3d_point(convert_to_normal_coordinate(center_x, center_y, camera), plane_normal, offset)
-    # center_3d = get_3d_plane_center(rect, plane_normal, offset)
     print("center: ", center_3d)
     if center_3d[2] < -10 or center_3d[2] > 0:
         return 0, 0, 0
     width = abs(rect.get_width() * center_3d[2])
     height = abs(rect.get_height() * center_3d[2])
 
-    # plane_normal = plane_normal / np.linalg.norm(plane_normal)
-    # rotation_matrix = rotation_matrix_from_vectors(camera_normal, plane_normal)
     rotation_matrix = normal_to_rotation_matrix(plane_normal)
     print("plane_normal", plane_normal)
-    # print("normal", np.dot(rotation_matrix, [camera_normal[0],camera_normal[1],camera_normal[2],0]))
-    # print("sub_normal", np.dot(rotation_matrix, [sub_normal[0], sub_normal[1], sub_normal[2], 0]))
 
     center_translation = np.array([[1, 0, 0, center_3d[0]],
                                    [0, 1, 0, center_3d[1]],
@@ -196,4 +195,31 @@ def get_plane_matrix_planercnn(mask, camera, image, plane_parameter, image_path)
                                    [0, 0, 0, 1]])
 
     transformation_matrix = get_transformation_matrix(rotation_matrix, center_translation)
-    return transformation_matrix, width, height
+    return transformation_matrix, width, height, plane_normal * offset
+
+
+def get_plane_matrix_gt(mask, image, plane_parameter, image_path):
+    # get 2d center coordinate
+    camera = [291.95, 300.83, 317, 242.625, 640, 480]
+    center_x, center_y = get_2d_center_coordinate(mask)
+    # plane range in normal coordinate [l, r, t, b]
+    rect = extract_rect(center_x, center_y, mask, camera, image, image_path)
+    plane_normal = np.array(plane_parameter)[:-1]
+    offset = plane_parameter[-1]
+    center_3d = get_3d_point(convert_to_normal_coordinate(center_x, center_y, camera), plane_normal, offset)
+    print("center: ", center_3d)
+    if center_3d[2] < -10 or center_3d[2] > 0:
+        return 0, 0, 0, 0
+    width = abs(rect.get_width() * center_3d[2])
+    height = abs(rect.get_height() * center_3d[2])
+
+    rotation_matrix = normal_to_rotation_matrix(plane_normal)
+    print("plane_normal", plane_normal)
+
+    center_translation = np.array([[1, 0, 0, center_3d[0]],
+                                   [0, 1, 0, center_3d[1]],
+                                   [0, 0, 1, center_3d[2]],
+                                   [0, 0, 0, 1]])
+
+    transformation_matrix = get_transformation_matrix(rotation_matrix, center_translation)
+    return transformation_matrix, width, height, plane_normal * offset
