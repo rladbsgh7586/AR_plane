@@ -6,6 +6,7 @@ import os
 import time
 import glob
 import numpy as np
+import re
 from PIL import Image
 import sys
 
@@ -148,24 +149,36 @@ def listen_device(host, port):
         server_sock.close()
 
 
-def test_plane_anchor(room_num, skip_download=False, skip_inference=False, version="Ours"):
-    image_path = "./smartphone_indoor/" + str(room_num) + "/"
+def test_plane_anchor(room_num, skip_download=False, skip_inference=False, method="Ours"):
+    image_path = "./smartphone_indoor/%d_%s/" % (room_num, method)
     if skip_download == False:
         download_device_data(room_num, image_path)
     total_image_number = count_device_data(image_path)
     save_camera_intrinsic(image_path)
     if skip_inference == False:
-        run_model(room_num)
-    host_plane(room_num, total_image_number, version)
+        run_model(room_num, method)
+    host_plane(room_num, total_image_number, method)
 
+def natural_keys(text):
+    return [atoi(c) for c in re.split(r'(\d+)', text)]
+
+
+def atoi(text):
+    return int(text) if text.isdigit() else text
 
 if __name__ == "__main__":
     host = "192.168.1.16"
     port = 7586
+    # update_room_number()
     # listen_device(host, port)
-    # test_plane_anchor(room_num=4, skip_download=False, skip_inference=False, version="PlaneRCNN")
-    # test_plane_anchor(room_num=2, skip_download=False, skip_inference=False, version="PlaneRCNN")
-    # test_plane_anchor(room_num=2, skip_download=True, skip_inference=True, version="PlaneRCNN")
-    test_plane_anchor(room_num=2, skip_download=True, skip_inference=True, version="GT")
-    # test_plane_anchor(room_num=2, skip_download=False, skip_inference=False, version="Ours")
-    # test_plane_anchor(room_num=2, skip_download=True, skip_inference=True, version="Ours")
+    # test_plane_anchor(room_num=4, skip_download=False, skip_inference=False, method="planercnn")
+    # test_plane_anchor(room_num=2, skip_download=False, skip_inference=False, method="planercnn")
+    test_plane_anchor(room_num=4, skip_download=True, skip_inference=True, method="planercnn")
+
+    # room_list = sorted(glob.glob("../Evaluation/data/*"), key=lambda x: (len(x), x))
+    # for room in room_list:
+    #     number = room.split("HOST")[-1]
+    #     test_plane_anchor(room_num=number, skip_download=True, skip_inference=True, method="gt")
+
+    # test_plane_anchor(room_num=2, skip_download=False, skip_inference=False, method="ours")
+    # test_plane_anchor(room_num=2, skip_download=True, skip_inference=True, method="ours")
