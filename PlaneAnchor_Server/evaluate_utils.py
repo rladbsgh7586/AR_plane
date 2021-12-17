@@ -118,7 +118,10 @@ def evaluatePlanesTensor(input_dict, detection_dict, printInfo=False, use_gpu=Tr
     return APs + plane_curves[0] + pixel_curves[0]
 
 def evaluatePlaneDepth(config, input_dict, detection_dict, printInfo=False):
-    masks_gt, depth_pred, depth_gt = input_dict['masks'], detection_dict['depth'], input_dict['depth']
+    masks_gt, depth_pred, depth_gt = input_dict['masks'], detection_dict['depth'], detection_dict['depth']
+    print(np.count_nonzero(masks_gt))
+    print(np.count_nonzero(depth_pred))
+    print(masks_gt.shape)
     masks_cropped = masks_gt[:, 80:560]
     ranges = config.getRanges(input_dict['camera']).transpose(1, 2).transpose(0, 1)
     plane_parameters_array = []
@@ -126,6 +129,8 @@ def evaluatePlaneDepth(config, input_dict, detection_dict, printInfo=False):
         XYZ = ranges * depth[:, 80:560]
         A = masks_cropped.unsqueeze(1) * XYZ
         b = masks_cropped
+        print(b)
+        print(b.shape)
         Ab = (A * b.unsqueeze(1)).sum(-1).sum(-1)
         AA = (A.unsqueeze(2) * A.unsqueeze(1)).sum(-1).sum(-1)
         plane_parameters = torch.stack([torch.matmul(torch.inverse(AA[planeIndex]), Ab[planeIndex]) for planeIndex in range(len(AA))], dim=0)
@@ -133,7 +138,7 @@ def evaluatePlaneDepth(config, input_dict, detection_dict, printInfo=False):
         plane_parameters = plane_parameters / torch.clamp(torch.pow(plane_offsets, 2), 1e-4)
         plane_parameters_array.append(plane_parameters)
         continue
-
+    os.exit()
     plane_diff = torch.norm(plane_parameters_array[0] - plane_parameters_array[1], dim=-1)
     plane_areas = masks_gt.sum(-1).sum(-1)
 
@@ -199,7 +204,7 @@ def evaluateBatchDetection(options, config, input_dict, detection_dict, statisti
 
         detection_dict['depth'] = depth.unsqueeze(0)
         pass
-
+    evaluatePlaneDepth(config, input_dict, detection_dict, printInfo=False)
     valid_mask = input_dict['depth'] > 1e-4
     depth_gt = input_dict['depth']
 

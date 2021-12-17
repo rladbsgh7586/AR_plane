@@ -7,6 +7,7 @@ def run_model(room_num, method):
     args.methods = 'f'
     args.suffix = 'warping_refine'
     args.dataset = 'inference'
+    # args.dataset = 'my_dataset'
     args.customDataFolder = 'smartphone_indoor/%d_%s' % (room_num, method)
     args.test_dir = 'inference/%d_%s' % (room_num, method)
     try:

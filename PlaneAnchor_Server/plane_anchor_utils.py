@@ -6,11 +6,17 @@ import math as m
 
 
 class Rect:
-    def __init__(self, l, r, t, b):
-        self.left = l
-        self.right = r
-        self.top = t
-        self.bottom = b
+    def __init__(self, l=None, r=None, t=None, b=None):
+        if l==None or r==None or t==None or b==None:
+            self.left = [0, 0]
+            self.right = [0, 0]
+            self.top = [0, 0]
+            self.bottom = [0, 0]
+        else:
+            self.left = l
+            self.right = r
+            self.top = t
+            self.bottom = b
 
     def is_in_rect(self, x, y):
         if self.left[0] < x < self.right[0] and self.bottom[1] < y < self.top[1]:
@@ -64,7 +70,7 @@ def normal_to_rotation_matrix(plane_normal):
     return rotation_matrix
 
 
-def extract_rect(x, y, mask, camera, image, image_path):
+def extract_rect(x, y, mask, camera, image, image_path, size_ratio_threshold):
     min_x, min_y, max_x, max_y = 10000, 10000, -1, -1
     segment_size = 0
     for i in range(mask.shape[0]):
@@ -89,16 +95,17 @@ def extract_rect(x, y, mask, camera, image, image_path):
                 rect_size += 1
                 plane_mask[i][j] = 1
 
-    print(segment_size, rect_size)
-    print(segment_size / rect_size)
-
     draw_rect(image, plane_mask, image_path)
+
+    if segment_size/rect_size < size_ratio_threshold:
+        print("rect extraction failed: ", segment_size/rect_size)
+        return Rect()
 
     l = convert_to_normal_coordinate(left_x, y, camera)
     r = convert_to_normal_coordinate(right_x, y, camera)
     t = convert_to_normal_coordinate(x, top_y, camera)
     b = convert_to_normal_coordinate(x, bottom_y, camera)
-    print(l, r, b, t)
+    # print(l, r, b, t)
     rect = Rect(l, r, t, b)
 
     return rect
@@ -128,7 +135,7 @@ def get_3d_plane_center(rect, plane_normal, offset):
     right_3d = get_3d_point(rect.right, plane_normal, offset)
     bottom_3d = get_3d_point(rect.bottom, plane_normal, offset)
     top_3d = get_3d_point(rect.top, plane_normal, offset)
-    print(left_3d, right_3d, bottom_3d, top_3d)
+    # print(left_3d, right_3d, bottom_3d, top_3d)
     center = np.mean([left_3d, right_3d, bottom_3d, top_3d], axis=0)
     return center.reshape(-1)
 
@@ -140,9 +147,9 @@ def get_center_depth(center, plane_normal, offset):
 
 def get_3d_point(xy, plane_normal, offset):
     # t = offset / np.dot(plane_normal, [xy[0], xy[1], -1])
-    t = -offset / (plane_normal[0] * xy[0] + plane_normal[1] * xy[1] + plane_normal[2])
+    t = offset / (plane_normal[0] * xy[0] + plane_normal[1] * xy[1] + plane_normal[2])
     # t = -(offset - (xy[0] * plane_normal[0]) - (xy[1] * plane_normal[1])) / plane_normal[2]
-    return np.array([xy[0] * t, xy[1] * t, -t])
+    return np.array([xy[0] * t, xy[1] * t, t])
 
 
 def convert_to_normal_coordinate(x, y, camera):
@@ -258,11 +265,11 @@ def parsing_plane_parameter(plane_parameter):
     offset = np.linalg.norm(plane_parameter)
     plane_normal = plane_parameter / offset
     temp = plane_normal[1]
-    plane_normal[0] = -plane_normal[0]
-    plane_normal[1] = -plane_normal[2]
+    plane_normal[0] = plane_normal[0]
+    plane_normal[1] = plane_normal[2]
     plane_normal[2] = temp
 
-    print("plane_normal", plane_normal)
-    print("offset", offset)
+    # print("plane_normal", plane_normal)
+    # print("offset", offset)
 
-    return plane_normal, -offset
+    return plane_normal, offset

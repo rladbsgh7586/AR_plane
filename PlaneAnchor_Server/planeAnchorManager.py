@@ -171,9 +171,9 @@ if __name__ == "__main__":
     port = 7586
     # update_room_number()
     # listen_device(host, port)
-    # test_plane_anchor(room_num=4, skip_download=False, skip_inference=False, method="planercnn")
-    # test_plane_anchor(room_num=2, skip_download=False, skip_inference=False, method="planercnn")
-    test_plane_anchor(room_num=4, skip_download=True, skip_inference=True, method="planercnn")
+    test_plane_anchor(room_num=4, skip_download=False, skip_inference=False, method="planercnn")
+    # test_plane_anchor(room_num=4, skip_download=True, skip_inference=False, method="planercnn")
+    # test_plane_anchor(room_num=4, skip_download=True, skip_inference=True, method="planercnn")
 
     # room_list = sorted(glob.glob("../Evaluation/data/*"), key=lambda x: (len(x), x))
     # for room in room_list:

@@ -470,6 +470,16 @@ def evaluate(options):
         camera[4] = 640
         camera[5] = 480
         dataset = InferenceDataset(options, config, image_list=image_list, camera=camera)
+    elif options.dataset == 'my_dataset':
+        image_list = glob.glob(options.customDataFolder + '/*.png') + glob.glob(options.customDataFolder + '/*.jpg')
+        camera = np.zeros(6)
+        camera[0] = 492
+        camera[1] = 490
+        camera[2] = 308
+        camera[3] = 229
+        camera[4] = 640
+        camera[5] = 480
+        dataset = InferenceDataset(options, config, image_list=image_list, camera=camera)
     elif 'inference' in options.dataset:
         image_list = glob.glob(options.customDataFolder + '/*.png') + glob.glob(options.customDataFolder + '/*.jpg')
         if os.path.exists(options.customDataFolder + '/camera.txt'):
