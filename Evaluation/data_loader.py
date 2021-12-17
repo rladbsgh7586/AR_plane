@@ -1,12 +1,107 @@
 import glob
 import os
-import numpy as np
 import re
 import matplotlib.pyplot as plt
 from PIL import Image
 from google.cloud import storage as s
 from skimage.metrics import structural_similarity as compare_ssim
+import firebase_admin
+from firebase_admin import credentials
+from firebase_admin import db
+from utils import *
+import pickle
 import cv2
+
+
+def update_room_number(room_numbers, method):
+    cred = credentials.Certificate('firebase_key.json')
+    firebase_admin.initialize_app(cred, {
+        'databaseURL': 'https://planeanchor-default-rtdb.firebaseio.com/'
+    })
+    # room_numbers = [4]
+    room_numbers = [1, 2, 4, 6, 7, 8, 9, 10, 11, 12, 16, 17, 19, 20, 21, 23, 25, 26, 27]
+    for room in room_numbers:
+        dir = db.reference().child('hotspot_list').child(str(room)).get()
+        dict = dir["plane_anchors"]
+        new_dict = {}
+        new_number = 0
+        for (key, value) in dict.items():
+            print(key)
+        #     new_number += 1
+            number = re.sub(r'[^0-9]', '', key)
+            value["plane_name"] = number
+            new_dict["plane%03i" % int(number)] = value
+        db.reference().child('hotspot_list').child(str(room)).child("plane_anchors_%s" % method).delete()
+        db.reference().child('hotspot_list').child(str(room)).child("plane_anchors_%s" % method).set(new_dict)
+
+    # for i in dir:
+    #     print(i)
+    # print(dir)
+    # dir = db.reference().child('hotspot_list').child(str(room_number))
+    # dir.child('plane_anchors').delete()
+    # dir.update({'plane_number': 0})
+    # plane_number = int(dir.child('plane_number').get())
+
+
+def download_plane_matrix(save_path, room_number, method):
+    step_printer("download anchor to plane matrix")
+    # dict of plane name {"plane1":}
+    cred = credentials.Certificate('firebase_key.json')
+    firebase_admin.initialize_app(cred, {
+        'databaseURL': 'https://planeanchor-default-rtdb.firebaseio.com/'
+    })
+    dir = db.reference().child('hotspot_list').child(str(room_number)).child("plane_anchors_%s" % method).get()
+    anchor_to_plane_matrix = {}
+    for key, val in dir.items():
+        if 'plane' in key and any(elem.isdigit() for elem in key):
+            anchor_to_plane_matrix[key] = np.reshape(val['transformation_matrix'], (4, 4))
+
+    with open(save_path, 'wb') as f:
+        pickle.dump(anchor_to_plane_matrix, f)
+
+
+def download_view_matrix(save_path, room_number, method):
+    # {"001": [1, 3, 5, ... , 1]}
+    step_printer("download view to anchor matrix")
+    storage_client = s.Client()
+
+    file_prefix = "Image/" + str(room_number) + "_predict_%s/" % method
+    blobs = storage_client.list_blobs('planeanchor.appspot.com', prefix=file_prefix, delimiter="/")
+
+    view_to_anchor_matrix = {}
+    for blob in blobs:
+        frame_name = blob.name.split("/")[-1].split("_")[0]
+        if 'jpg' in blob.name:
+            try:
+                view_to_anchor_matrix[frame_name] = np.linalg.inv(parsing_transformation_matrix(blob.metadata['inverseModelViewMatrix']))
+            except KeyError:
+                print("missed inverse model view matrix ", blob.name)
+    print(view_to_anchor_matrix)
+    with open(save_path, 'wb') as f:
+        pickle.dump(view_to_anchor_matrix, f)
+
+
+# combine plane_matrix and view_matrix
+def get_params_arcore(method_path):
+    plane_parameters = {}
+    with open(method_path+"original/anchor_to_plane_matrix", 'rb') as f:
+        anchor_to_plane_matrix = pickle.load(f)
+    with open(method_path+"original/anchor_to_plane_matrix", 'rb') as f:
+        view_to_anchor_matrix = pickle.load(f)
+    print(anchor_to_plane_matrix)
+    print(view_to_anchor_matrix)
+    dataset_list = glob.glob(method_path + "labeling/*_json")
+    plane_parameters = {}
+    for dataset in dataset_list:
+        frame_name = dataset.split("/")[-1].split("_")[0]
+        if plane_parameters.get(frame_name) == None:
+            plane_parameters[frame_name] = {}
+        label_path = dataset + "label.png"
+
+
+
+    # dict {"001": {"plane1" : [0, 0, 1, 2], "plane2" : [0, 1, 0, 3]}}
+    pass
 
 
 def copy_input_images(origianl_path, copy_path):
@@ -21,7 +116,8 @@ def copy_input_images(origianl_path, copy_path):
         os.system("cp %s %s" % (img_path, new_path))
 
 
-def load_output_images(path, scenario):
+def download_predict_images(path, scenario, method):
+    step_printer("download predict images")
     original_path = path + "original/"
     try:
         os.system("mkdir -p %s" % original_path)
@@ -30,16 +126,17 @@ def load_output_images(path, scenario):
 
     storage_client = s.Client()
 
-    file_prefix = "Image/" + str(scenario) + "_predict/"
+    file_prefix = "Image/" + str(scenario) + "_predict_%s/" % method
     blobs = storage_client.list_blobs('planeanchor.appspot.com', prefix=file_prefix, delimiter="/")
 
     for blob in blobs:
-        original_file_path = original_path + blob.name.split("/")[-1]
-        sync_file_path = path + blob.name.split("/")[-1]
+        file_name = blob.name.split("/")[-1].split(".jpg")[0] + ".jpg"
+        original_file_path = original_path + file_name
+        sync_file_path = path + file_name
         blob.download_to_filename(original_file_path)
-        sync_output_images(original_file_path, sync_file_path)
+        sync_predict_images(original_file_path, sync_file_path)
 
-def sync_output_images(original_path, save_path):
+def sync_predict_images(original_path, save_path):
     target_size = (480, 640)
     image = Image.open(original_path)
     resize_ratio = np.min([target_size[0] / image.size[0], target_size[1] / image.size[1]])
@@ -69,7 +166,7 @@ def find_GT_images(gt_path, save_path):
         try:
             gt_num = int(int(frame_num) / phone_fps * gt_fps - skiped_gt_number)
             gt = prefix + "image/%06i.jpg" % gt_num
-            original_copy_path = prefix + "eval/original/%03i_gt.jpg" % int(input_num)
+            original_copy_path = prefix + "eval/%03i_gt.jpg" % int(input_num)
             copy_path = prefix + "eval/%03i_gt.jpg" % int(input_num)
             os.system("cp %s %s" %(gt, original_copy_path))
             sync_GT_images(original_copy_path, copy_path)
@@ -127,23 +224,10 @@ def clean_up_scenario(path):
     except OSError:
         print('Error: Creating directory. ' + path)
 
-# temp_code
-def modify_file_name(path):
-    to_change_list = sorted(glob.glob(path+"image/*.jpg"))
-    print(path)
-    print(len(to_change_list))
-    print(to_change_list[-1])
-    # for i in to_change_list:
-        # prefix = i.split("00")[0]
-        # name = i.split("/")[-1].split(".png")[0]
-        # modified = prefix + name + ".jpg
-        # img = Image.open(i)
-        # img.save(modified)
-        # print(modified)
-
 
 def make_labeling_path(path):
     label_path = path + "labeling/"
+    step_printer("make labeling folder %s" % label_path)
     try:
         os.system("mkdir -p %s" % label_path)
     except OSError:
@@ -155,7 +239,8 @@ def make_labeling_path(path):
         os.system("cp %s %s" % (to_be_label, label_path))
 
 
-def json_to_mask(json_path):
+def json_to_dataset(json_path):
+    step_printer("labelme json to dataset")
     json_list = glob.glob(json_path+"/*.json")
     for json_path in json_list:
         os.system("labelme_json_to_dataset %s" % json_path)
@@ -165,17 +250,18 @@ def json_to_mask(json_path):
         os.system("rm %s" % json_path)
 
 
-def get_plane_parameters(param_path):
+def load_plane_parameters(param_path):
     param_list = sorted(glob.glob(param_path + "*param*"))
     params = {}
     plane_num = 0
     for param_path in param_list:
         param = np.load(param_path)
         for p in param:
+            plane_num += 1
             normal, offset = parse_param(p)
             arr = list(np.append(normal, offset))
-            params[plane_num] = arr
-            plane_num += 1
+            plane_name = "plane%d" % plane_num
+            params[plane_name] = arr
 
     return params
 
@@ -247,15 +333,6 @@ def calc_depth_map(label_txt, parameter, plane_order, camera):
     visualize_depth_numpy(depth_map)
 
     return mask, depth_map
-
-
-def get_depth_value(x, y, parameter, camera):
-    u = (x - camera[2]) / camera[0]
-    v = - (y - camera[3]) / camera[1]
-
-    # parameter [normal[0], normal[1], normal[2], offset]
-    t = -(parameter[3] - (u * parameter[0]) - (v * parameter[1])) / parameter[2]
-    return t
 
 
 def visualize_depth_numpy(depth_map):
@@ -401,6 +478,29 @@ def plot_points(point_cloud):
     plt.show()
 
 
+def initialization(new_input_path, gt_path):
+    file_list = glob.glob(new_input_path + "*.jpg")
+    if len(file_list) == 0:
+        copy_input_images(previous_input_path, new_input_path)
+        find_input_frames(gt_path, new_input_path)
+        find_GT_images(gt_path, new_input_path)
+
+    file_list = glob.glob(new_input_path + "*gt.jpg")
+    gt_path = new_input_path + "gt/"
+    if len(file_list) > 0 and not os.path.isdir(gt_path):
+        make_labeling_path(gt_path)
+        for file in file_list:
+            file_name = file.split("/")[-1]
+            gt_copy_path = gt_path + file_name
+            gt_labeling_copy_path = gt_path + "labeling/" + file_name
+            os.system("cp %s %s" % (file, gt_copy_path))
+            os.system("cp %s %s" % (file, gt_labeling_copy_path))
+
+    if os.path.isdir(gt_path):
+        return True
+    else:
+        return False
+
 
 def test(path):
     list = glob.glob(path+"*input*.jpg")
@@ -413,29 +513,62 @@ def test(path):
 
 
 if __name__ == "__main__":
-    scenario = 2
+    scenario = 4
+    method = "planercnn"
+
     previous_input_path = "../PlaneAnchor_Server/smartphone_indoor/%d/" % scenario
     new_input_path = "data/HOST%d/eval/" % scenario
+    method_path = "data/HOST%d/eval/%s/" % (scenario, method)
     gt_path = "data/HOST%d/" % scenario
+    camera_intrinsic = [492, 490, 308, 229, 640, 480]
     # after server operation
     # clean_up_scenario(new_input_path)
-    # copy_input_images(previous_input_path, new_input_path)
-    # load_output_images(new_input_path, scenario)
-    # find_input_frames(gt_path, new_input_path)
-    # find_GT_images(gt_path, new_input_path)
+
+    # update_room_number(4, method)
+
+    # it works after inference of server
+    success = initialization(new_input_path, method_path)
+
+    # after labeling ground truth
+    if success == True:
+        json_to_dataset(new_input_path + "/gt/labeling/")
+
+    # run with each method
+
+    predict_images = glob.glob(method_path+"original/*.jpg")
+    if predict_images == []:
+        download_predict_images(method_path, scenario, method)
+    anchor_to_plane_matrix_path = method_path + "original/anchor_to_plane_matrix.pkl"
+    if not os.path.exists(anchor_to_plane_matrix_path):
+        download_plane_matrix(anchor_to_plane_matrix_path, scenario, method)
+    view_to_anchor_matrix_path = method_path + "original/view_to_anchor_matrix.pkl"
+    if not os.path.exists(view_to_anchor_matrix_path):
+        download_view_matrix(view_to_anchor_matrix_path, scenario, method)
 
     # label gt and predict using labelme
-    # make_labeling_path(new_input_path)
+    if not os.path.isdir(method_path + "labeling"):
+        make_labeling_path(method_path)
 
     # run affter label gt and predict using labelme
-    # json_to_mask(new_input_path+"label_gt/")
-    # json_to_mask(new_input_path+"label_predict/")
+    json_list = glob.glob(method_path+"labeling/*.json")
+    if not json_list == []:
+        json_to_dataset(method_path+"labeling/")
 
-    # params = get_plane_parameters(previous_input_path)
-    # camera_intrinsics = np.loadtxt(previous_input_path + "camera.txt")
-    # get_predict_depth(new_input_path, params, camera_intrinsics)
-    print(np.load("/data/AR_plane/Evaluation/data/HOST2/eval/depth_predict/001_params.npy"))
-    get_gt_depth(gt_path)
+    # json_dataset_list = glob.glob(method_path + "labeling/*_json")
+    # param_path = method_path + "plane_parameters.pkl"
+    # if not json_dataset_list == [] and not os.path.exists(param_path):
+    #     if method == "arcore":
+    #         params = get_params_arcore(method_path)
+    #     else:
+    #         params = load_plane_parameters(previous_input_path)
+        # with open(param_path, 'wb') as f:
+        #     pickle.dump(params, f)
+
+    # if os.path.exists(param_path):
+    #     get_predict_depth(new_input_path, params, camera_intrinsic)
+
+    # print(np.load("/data/AR_plane/Evaluation/data/HOST2/eval/depth_predict/001_params.npy"))
+    # get_gt_depth(gt_path)
 
     # test(new_input_path)
 #   eval - input_image, output_image(resized), GT_image(resized), GT_frame_numbers(jpg: inputnum_framenum) / original.output_image, original.GT_image
