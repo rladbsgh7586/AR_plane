@@ -65,28 +65,27 @@ def download_view_matrix(save_path, room_number, method):
     step_printer("download view to anchor matrix")
     storage_client = s.Client()
 
-    file_prefix = "Image/" + str(room_number) + "_predict_%s/" % method
+    file_prefix = "Image/" + str(room_number) + "/"
     blobs = storage_client.list_blobs('planeanchor.appspot.com', prefix=file_prefix, delimiter="/")
 
     view_to_anchor_matrix = {}
     for blob in blobs:
-        frame_name = blob.name.split("/")[-1].split("_")[0]
+        frame_name = blob.name.split("/")[-1].split(".jpg")[0]
         if 'jpg' in blob.name:
             try:
                 view_to_anchor_matrix[frame_name] = np.linalg.inv(parsing_transformation_matrix(blob.metadata['inverseModelViewMatrix']))
             except KeyError:
                 print("missed inverse model view matrix ", blob.name)
-    print(view_to_anchor_matrix)
     with open(save_path, 'wb') as f:
         pickle.dump(view_to_anchor_matrix, f)
 
 
 # combine plane_matrix and view_matrix
-def get_params_arcore(method_path):
+def get_params(method_path):
     plane_parameters = {}
-    with open(method_path+"original/anchor_to_plane_matrix", 'rb') as f:
+    with open(method_path+"original/anchor_to_plane_matrix.pkl", 'rb') as f:
         anchor_to_plane_matrix = pickle.load(f)
-    with open(method_path+"original/anchor_to_plane_matrix", 'rb') as f:
+    with open(method_path+"original/view_to_anchor_matrix.pkl", 'rb') as f:
         view_to_anchor_matrix = pickle.load(f)
     print(anchor_to_plane_matrix)
     print(view_to_anchor_matrix)
@@ -94,14 +93,33 @@ def get_params_arcore(method_path):
     plane_parameters = {}
     for dataset in dataset_list:
         frame_name = dataset.split("/")[-1].split("_")[0]
+        f = open(dataset + "/label_names.txt", 'r')
+
+        label_names = {}
+        lines = f.readlines()
+        number = 0
+        for line in lines:
+            line = line.strip()
+            label_names[number] = line
+            number += 1
         if plane_parameters.get(frame_name) == None:
             plane_parameters[frame_name] = {}
-        label_path = dataset + "label.png"
 
+        for val in label_names.values():
+            if val == "_background_":
+                continue
+            plane_number = re.sub(r'[^0-9]', '', val)
+            if "plane" in val:
+                plane_name = "plane%03i" % int(plane_number)
+                vta_matrix = view_to_anchor_matrix[frame_name]
+                atp_matrix = anchor_to_plane_matrix[plane_name]
+                vtp_matrix = np.dot(atp_matrix, vta_matrix)
 
-
+                plane_parameter = calc_plane_equation(vtp_matrix)
+                plane_parameters[frame_name][plane_name] = plane_parameter
+    print(plane_parameters)
+    return plane_parameters
     # dict {"001": {"plane1" : [0, 0, 1, 2], "plane2" : [0, 1, 0, 3]}}
-    pass
 
 
 def copy_input_images(origianl_path, copy_path):
@@ -273,14 +291,14 @@ def parse_param(param):
     return plane_normal, offset
 
 
-def get_predict_depth(path, params, camera):
-    depth_path = path + "depth_predict/"
+def get_predict_depth(method_path, params, camera):
+    depth_path = method_path + "depth_predict/"
     try:
         os.system("mkdir -p %s" % depth_path)
     except OSError:
         print('Error: Creating directory. ' + depth_path)
 
-    label_path = path + "label_predict"
+    label_path = method_path + "labeling"
     json_folder_list = sorted(glob.glob(label_path+"/*_json/"+"*.txt"))
 
     depth_maps = []
@@ -480,7 +498,8 @@ def plot_points(point_cloud):
 
 def initialization(new_input_path, gt_path):
     file_list = glob.glob(new_input_path + "*.jpg")
-    if len(file_list) == 0:
+    images = glob.glob(previous_input_path + "*.jpg")
+    if len(file_list) == 0 and not images == []:
         copy_input_images(previous_input_path, new_input_path)
         find_input_frames(gt_path, new_input_path)
         find_GT_images(gt_path, new_input_path)
@@ -514,7 +533,7 @@ def test(path):
 
 if __name__ == "__main__":
     scenario = 4
-    method = "planercnn"
+    method = "arcore"
 
     previous_input_path = "../PlaneAnchor_Server/smartphone_indoor/%d/" % scenario
     new_input_path = "data/HOST%d/eval/" % scenario
@@ -539,14 +558,15 @@ if __name__ == "__main__":
     if predict_images == []:
         download_predict_images(method_path, scenario, method)
     anchor_to_plane_matrix_path = method_path + "original/anchor_to_plane_matrix.pkl"
-    if not os.path.exists(anchor_to_plane_matrix_path):
+    predict_images = glob.glob(method_path + "original/*.jpg")
+    if not os.path.exists(anchor_to_plane_matrix_path) and not predict_images == []:
         download_plane_matrix(anchor_to_plane_matrix_path, scenario, method)
     view_to_anchor_matrix_path = method_path + "original/view_to_anchor_matrix.pkl"
-    if not os.path.exists(view_to_anchor_matrix_path):
+    if not os.path.exists(view_to_anchor_matrix_path) and not predict_images == []:
         download_view_matrix(view_to_anchor_matrix_path, scenario, method)
 
     # label gt and predict using labelme
-    if not os.path.isdir(method_path + "labeling"):
+    if not os.path.isdir(method_path + "labeling") and not predict_images == []:
         make_labeling_path(method_path)
 
     # run affter label gt and predict using labelme
@@ -554,15 +574,15 @@ if __name__ == "__main__":
     if not json_list == []:
         json_to_dataset(method_path+"labeling/")
 
-    # json_dataset_list = glob.glob(method_path + "labeling/*_json")
-    # param_path = method_path + "plane_parameters.pkl"
-    # if not json_dataset_list == [] and not os.path.exists(param_path):
-    #     if method == "arcore":
-    #         params = get_params_arcore(method_path)
-    #     else:
-    #         params = load_plane_parameters(previous_input_path)
-        # with open(param_path, 'wb') as f:
-        #     pickle.dump(params, f)
+    json_dataset_list = glob.glob(method_path + "labeling/*_json")
+    param_path = method_path + "plane_parameters.pkl"
+    if not json_dataset_list == [] and not os.path.exists(param_path):
+        params = get_params(method_path)
+        with open(param_path, 'wb') as f:
+            pickle.dump(params, f)
+
+    if os.path.exists(param_path):
+
 
     # if os.path.exists(param_path):
     #     get_predict_depth(new_input_path, params, camera_intrinsic)
