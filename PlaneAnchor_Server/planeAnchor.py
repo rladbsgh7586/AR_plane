@@ -192,27 +192,38 @@ def get_plane_matrix_planercnn(mask, camera, image, plane_parameter, image_path,
     rect = extract_rect(center_x, center_y, mask, camera, image, image_path, rect_size_threshold)
 
     plane_normal, offset = parsing_plane_parameter(plane_parameter)
+    print(plane_normal , offset)
+    transformation_matrix, w_multiplier, h_multiplier = calc_transformation_matrix(plane_normal, offset, center_x, center_y, camera)
+    transformation_matrix = np.transpose(transformation_matrix)
+    print(transformation_matrix)
     center_3d = get_3d_point(convert_to_normal_coordinate(center_x, center_y, camera), plane_normal, offset)
     # camera normal coordinate to device coordinate (android)
     center_3d[2] = - center_3d[2]
     plane_normal[2] = - plane_normal[2]
+
     print("center: ", center_3d)
     print("plane_normal", plane_normal)
-    # center_3d = get_3d_plane_center(rect, plane_normal, offset)
+    # fixed_plane_normal = np.dot([0, -1, 0, 0], transformation_matrix)[:3]
+    # fixed_plane_normal = fixed_plane_normal / np.linalg.norm(fixed_plane_normal)
+
+    # print("fixed_plane_normal", fixed_plane_normal)
+
+    # rotation_matrix = normal_to_rotation_matrix(plane_normal)
+    #
+    # center_translation = np.array([[1, 0, 0, center_3d[0]],
+    #                                [0, 1, 0, center_3d[1]],
+    #                                [0, 0, 1, center_3d[2]],
+    #                                [0, 0, 0, 1]])
+    #
+    # transformation_matrix = get_transformation_matrix(rotation_matrix, center_translation)
 
     if center_3d[2] < -10 or center_3d[2] > 0 or rect.get_width() < 100:
         return 0, 0, 0, 0
-    width = abs(rect.get_width() * center_3d[2])
-    height = abs(rect.get_height() * center_3d[2])
+    width = abs(rect.get_width() * w_multiplier)
+    height = abs(rect.get_height() * h_multiplier)
 
-    rotation_matrix = normal_to_rotation_matrix(plane_normal)
 
-    center_translation = np.array([[1, 0, 0, center_3d[0]],
-                                   [0, 1, 0, center_3d[1]],
-                                   [0, 0, 1, center_3d[2]],
-                                   [0, 0, 0, 1]])
 
-    transformation_matrix = get_transformation_matrix(rotation_matrix, center_translation)
     return transformation_matrix, width, height, plane_parameter
 
 
@@ -240,4 +251,5 @@ def get_plane_matrix_gt(mask, image, plane_parameter, image_path, rect_size_thre
                                    [0, 0, 0, 1]])
 
     transformation_matrix = get_transformation_matrix(rotation_matrix, center_translation)
+
     return transformation_matrix, width, height, plane_normal * offset

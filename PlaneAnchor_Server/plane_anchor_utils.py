@@ -1,3 +1,5 @@
+import math
+
 import matplotlib.pyplot as plt
 from skimage.measure import find_contours
 from utils import *
@@ -44,8 +46,71 @@ def get_2d_center_coordinate(mask):
     return center_x, center_y
 
 
+def calc_transformation_matrix(plane_normal, offset, center_x, center_y, camera):
+    world_center = get_3d_point(convert_to_normal_coordinate(center_x, center_y, camera), plane_normal, offset)
+    world_right = get_3d_point(convert_to_normal_coordinate(center_x+1, center_y, camera), plane_normal, offset)
+    world_up = get_3d_point(convert_to_normal_coordinate(center_x, center_y+1, camera), plane_normal, offset)
+    x_distance = calc_distance_points(world_center, world_right)
+    z_distance = calc_distance_points(world_center, world_up)
+    camera_center = (0, 0, 0)
+    camera_right = (x_distance, 0, 0)
+    camera_up = (0, 0, z_distance)
+
+    ori_x_distance = calc_distance_points(convert_to_normal_coordinate(center_x, center_y, camera), convert_to_normal_coordinate(center_x+1, center_y, camera))
+    ori_z_distance = calc_distance_points(convert_to_normal_coordinate(center_x, center_y, camera), convert_to_normal_coordinate(center_x, center_y+1, camera))
+    width_multiplier = x_distance / ori_x_distance
+    height_multiplier = z_distance / ori_z_distance
+
+    original_points = np.array((camera_center, camera_right, camera_up))
+    transformed_points = np.array((world_center, world_right, world_up))
+
+    # calc_plane_equation(np.array(world_center), np.array(world_right), np.array(world_up)
+
+    transformed_points[0][2] *= -1
+    transformed_points[1][2] *= -1
+    transformed_points[2][2] *= -1
+
+    return recover_homogenous_affine_transformation(original_points, transformed_points), width_multiplier, height_multiplier
+
+
+def calc_distance_points(A, B):
+    a = np.array(A)
+    b = np.array(B)
+
+    dist = np.linalg.norm(a-b)
+
+    return dist
+
+def recover_homogenous_affine_transformation(p, p_prime):
+    Q = p[1:] - p[0]
+    Q_prime = p_prime[1:] - p_prime[0]
+
+    R = np.dot(np.linalg.inv(np.row_stack((Q, np.cross(*Q)))),
+               np.row_stack((Q_prime, np.cross(*Q_prime))))
+
+    # calculate translation vector
+    t = p_prime[0] - np.dot(p[0], R)
+
+    # calculate affine transformation matrix
+    return np.column_stack((np.row_stack((R, t)),
+                            (0, 0, 0, 1)))
+
+
+def calc_plane_equation(A, B, C):
+    v1 = C - A
+    v2 = B - A
+
+    cp = np.cross(v1, v2)
+    a, b, c = cp
+
+    plane_normal = np.array([a, b, c])
+    plane_normal = plane_normal / np.linalg.norm(plane_normal)
+
+    return np.array([plane_normal[0], plane_normal[1], plane_normal[2], np.dot(plane_normal, A)])
+
+
 def normal_to_rotation_matrix(plane_normal):
-    camera_normal = [0, 1, 0]
+    camera_normal = [0, -1, 0]
 
     # rotation_matrix = rotation_matrix_from_vectors(camera_normal, plane_normal)
     # return rotation_matrix
