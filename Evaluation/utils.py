@@ -1,5 +1,6 @@
 import numpy as np
-
+import pyrealsense2 as rs
+import os
 
 def step_printer(step):
     print("------------step------------")
@@ -23,8 +24,9 @@ def get_depth_value(x, y, parameter, camera):
     u = (x - camera[2]) / camera[0]
     v = - (y - camera[3]) / camera[1]
 
+    t = parameter[3] / (parameter[0] * u + parameter[1] * v + parameter[2])
     # parameter [normal[0], normal[1], normal[2], offset]
-    t = -(parameter[3] - (u * parameter[0]) - (v * parameter[1])) / parameter[2]
+    t = (parameter[3] - (u * parameter[0]) - (v * parameter[1])) / parameter[2]
     return t
 
 
@@ -55,3 +57,32 @@ def calc_plane_equation(vtp_matrix):
     plane_normal = plane_normal / np.linalg.norm(plane_normal)
 
     return np.array([-plane_normal[0], -plane_normal[1], plane_normal[2], -np.dot(plane_normal, A)])
+
+
+def bag2depth_npy_align(file_name, save_path, todo_frames):
+    pipeline = rs.pipeline()
+    config = rs.config()
+    rs.config.enable_device_from_file(config, file_name)
+    config.enable_stream(rs.stream.depth, rs.format.z16, 15)
+    config.enable_stream(rs.stream.color, rs.format.rgb8, 15)
+    pipeline.start(config)
+    align = rs.align(rs.stream.color)
+
+    while todo_frames:
+        frames = pipeline.wait_for_frames()
+        frames = align.process(frames)
+        frame_num = frames.get_frame_number()
+        if frame_num not in todo_frames:
+            continue
+
+        depth_frame = frames.get_depth_frame()
+
+        depth_npy = np.zeros((480, 640))
+        for y in range(480):
+            for x in range(640):
+                dist = depth_frame.get_distance(x, y)
+                depth_npy[y][x] = dist
+
+        np.save(os.path.join(save_path, "frame%06i.npy" % frame_num), depth_npy)
+        todo_frames.remove(frame_num)
+

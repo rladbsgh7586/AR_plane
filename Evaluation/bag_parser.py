@@ -10,7 +10,7 @@ import numpy as np
 import glob
 import re
 from sensor_msgs.msg import Image
-from cv_bridge import CvBridge
+# from cv_bridge import CvBridge
 
 import cv2
 
@@ -41,18 +41,18 @@ def video2image(video_name, save_path):
     print("{} images are extracted in {}.".format(count, save_path))
 
 
-# def bag2image(bag_name, save_path):
-#     make_dir(save_path)
-#     bag = rosbag.Bag(bag_name, "r")
-#     bridge = CvBridge()
-#     count = 0
-#     for topic, msg, t in bag.read_messages():
-#         if "/data" in topic:
-#             if "Color" in topic:
-#                 img = bridge.imgmsg_to_cv2(msg, desired_encoding='passthrough')
-#                 cv2.imwrite(os.path.join(save_path, "frame%06i.png" % count), cv2.cvtColor(img, cv2.COLOR_RGB2BGR))
-#                 count += 1
-#     bag.close()
+def bag2image(bag_name, save_path):
+    make_dir(save_path)
+    bag = rosbag.Bag(bag_name, "r")
+    bridge = CvBridge()
+    count = 0
+    for topic, msg, t in bag.read_messages():
+        if "/data" in topic:
+            if "Color" in topic:
+                img = bridge.imgmsg_to_cv2(msg, desired_encoding='passthrough')
+                cv2.imwrite(os.path.join(save_path, "frame%06i.png" % count), cv2.cvtColor(img, cv2.COLOR_RGB2BGR))
+                count += 1
+    bag.close()
 
 
 def bag2timestamp(file_name, save_path):
@@ -130,7 +130,6 @@ def bag2depth_img(file_name, save_path):
 
     timestamp_npy = np.load(save_path + "timestamp.npy")
     todo_frames = get_todo_frames(timestamp_npy)
-
     while todo_frames:
         frames = pipeline.wait_for_frames()
         depth_frame = frames.get_depth_frame()
@@ -234,7 +233,7 @@ if __name__ == "__main__":
             type = "RESOLVE"
         scenario = re.sub(r'[^0-9]', '', file)
 
-        scenario = 2
+        scenario = 4
         file_name = "input_data/" + type + str(scenario)
         save_path = "data/" + type + str(scenario) + "/"
 
@@ -244,9 +243,10 @@ if __name__ == "__main__":
 
         # video2image(file_name+".mp4", save_path + "phone_image/")
         # bag2timestamp(file_name+".bag", save_path)
-        bag2img(file_name + ".bag", save_path)
+        # bag2img(file_name + ".bag", save_path)
         # bag2depth_img(file_name+".bag", save_path)
         # bag2depth_npy(file_name + ".bag", save_path)
+        bag2depth_npy_test(file_name + ".bag", save_path)
         # bag2depth_ply(file_name + ".bag", save_path)
 
         break
