@@ -174,7 +174,7 @@ def visualizeBatchDetection(options, config, input_dict, detection_dict, indexOf
     images = unmold_image(images, config)
     image = images[0]
     cv2.imwrite(options.test_dir + '/' + str(indexOffset) + '_image' + suffix + '.png', image[80:560])
-    
+
     if 'warped_image' in input_dict:
         warped_images = input_dict['warped_image'].detach().cpu().numpy().transpose((0, 2, 3, 1))
         warped_images = unmold_image(warped_images, config)
@@ -192,14 +192,14 @@ def visualizeBatchDetection(options, config, input_dict, detection_dict, indexOf
         pass
 
     if 'depth' in input_dict:
-        depths = input_dict['depth'].detach().cpu().numpy()                
+        depths = input_dict['depth'].detach().cpu().numpy()
         depth_gt = depths[0]
         cv2.imwrite(options.test_dir + '/' + str(indexOffset) + '_depth' + suffix + '.png', drawDepthImage(depth_gt[80:560]))
         pass
 
-    windows = (0, 0, images.shape[1], images.shape[2])        
-    windows = (0, 0, images.shape[1], images.shape[2])                
-    class_colors = ColorPalette(config.NUM_CLASSES).getColorMap().tolist()        
+    windows = (0, 0, images.shape[1], images.shape[2])
+    windows = (0, 0, images.shape[1], images.shape[2])
+    class_colors = ColorPalette(config.NUM_CLASSES).getColorMap().tolist()
 
     if 'mask' in input_dict:
         box_image = image.copy()
@@ -234,19 +234,19 @@ def visualizeBatchDetection(options, config, input_dict, detection_dict, indexOf
         for name, boundary in [('gt', boundary_gt), ('pred', boundary_pred)]:
             boundary_image = image.copy()
             boundary_image[boundary[0] > 0.5] = np.array([255, 0, 0])
-            boundary_image[boundary[1] > 0.5] = np.array([0, 0, 255])        
+            boundary_image[boundary[1] > 0.5] = np.array([0, 0, 255])
             cv2.imwrite(options.test_dir + '/' + str(indexOffset) + '_boundary' + suffix + '_' + name + '.png', boundary_image)
             continue
         pass
-        
-    if 'depth' in detection_dict:    
+
+    if 'depth' in detection_dict:
         depth_pred = detection_dict['depth'][0].detach().cpu().numpy()
-        cv2.imwrite(options.test_dir + '/' + str(indexOffset) + '_depth' + suffix + prediction_suffix + '.png', drawDepthImage(depth_pred[80:560]))                    
+        cv2.imwrite(options.test_dir + '/' + str(indexOffset) + '_depth' + suffix + prediction_suffix + '.png', drawDepthImage(depth_pred[80:560]))
         if options.debug:
             valid_mask = (depth_gt > 1e-4) * (input_dict['segmentation'].detach().cpu().numpy()[0] >= 0) * (detection_dict['mask'].detach().cpu().numpy().squeeze() > 0.5)
             pass
         pass
-    
+
     if 'depth_np' in detection_dict:
         cv2.imwrite(options.test_dir + '/' + str(indexOffset) + '_depth' + suffix + prediction_suffix + '_np.png', drawDepthImage(detection_dict['depth_np'].squeeze().detach().cpu().numpy()[80:560]))
         pass
@@ -254,7 +254,7 @@ def visualizeBatchDetection(options, config, input_dict, detection_dict, indexOf
     if 'depth_ori' in detection_dict:
         cv2.imwrite(options.test_dir + '/' + str(indexOffset) + '_depth' + suffix + prediction_suffix + '_ori.png', drawDepthImage(detection_dict['depth_ori'].squeeze().detach().cpu().numpy()[80:560]))
         pass
-    
+
 
     if 'detection' in detection_dict and len(detection_dict['detection']) > 0:
         detections = detection_dict['detection'].detach().cpu().numpy()
@@ -275,7 +275,7 @@ def visualizeBatchDetection(options, config, input_dict, detection_dict, indexOf
         detection_masks = detection_dict['masks']
         pose = np.eye(4)
         pose[:3, :3] = np.matmul(axisAngleToRotationMatrix(np.array([-1, 0, 0]), np.pi / 18 * 0), axisAngleToRotationMatrix(np.array([0, 0, -1]), np.pi / 18))
-        pose[:3, 3] = np.array([-0.4, 0, 0])        
+        pose[:3, 3] = np.array([-0.4, 0, 0])
         drawNewViewDepth(options.test_dir + '/' + str(indexOffset) + '_new_view' + suffix + prediction_suffix + '.png', detection_masks[:, 80:560].detach().cpu().numpy(), detection_dict['plane_XYZ'].detach().cpu().numpy().transpose((0, 2, 3, 1))[:, 80:560], input_dict['camera'].detach().cpu().numpy(), pose)
         depth = depth_gt[80:560]
         ranges = config.getRanges(input_dict['camera']).detach().cpu().numpy()
@@ -284,7 +284,7 @@ def visualizeBatchDetection(options, config, input_dict, detection_dict, indexOf
         depth = detection_dict['depth_np'].squeeze()[80:560]
         ranges = config.getRanges(input_dict['camera']).detach().cpu().numpy()
         XYZ_gt = ranges * np.expand_dims(depth, axis=-1)
-        drawNewViewDepth(options.test_dir + '/' + str(indexOffset) + '_new_view_depth_pred' + suffix + prediction_suffix + '.png', np.expand_dims(depth > 1e-4, 0), np.expand_dims(XYZ_gt, 0), input_dict['camera'].detach().cpu().numpy(), pose)        
+        drawNewViewDepth(options.test_dir + '/' + str(indexOffset) + '_new_view_depth_pred' + suffix + prediction_suffix + '.png', np.expand_dims(depth > 1e-4, 0), np.expand_dims(XYZ_gt, 0), input_dict['camera'].detach().cpu().numpy(), pose)
         pass
 
     if write_new_view:
@@ -316,13 +316,13 @@ def visualizeBatchDetection(options, config, input_dict, detection_dict, indexOf
 
                 index_offset = sum(num_frames[:c]) + frame
                 drawNewViewDepth(options.test_dir + '/' + str(indexOffset) + '_video/' + str(index_offset) + '.png', detection_masks, XYZ_pred, camera, pose)
-                
+
                 drawNewViewDepth(options.test_dir + '/' + str(indexOffset) + '_video_gt/' + str(index_offset) + '.png', valid_mask, XYZ_gt, camera, pose)
                 continue
             continue
         exit(1)
         pass
-    
+
     if write_ply:
         detection_masks = detection_dict['masks']
         if 'plane_XYZ' not in detection_dict:

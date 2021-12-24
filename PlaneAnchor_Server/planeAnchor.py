@@ -7,16 +7,24 @@ import struct
 import PIL.Image as pilimg
 from plane_anchor_utils import *
 
+firebase_init_checker = False
 
 def host_plane(room_number, total_image_number, method):
     plane_size_threshold = 0.1
     sampled_point_threshold = 5
-    rect_size_threshold = 0.7
+    if method == "planercnn" or method == "gt":
+        rect_size_threshold = 0.7
+    if method == "planenet":
+        rect_size_threshold = 0.6
     zero_padding_pixel = 80
-    cred = credentials.Certificate('firebase_key.json')
-    firebase_admin.initialize_app(cred, {
-        'databaseURL': 'https://planeanchor-default-rtdb.firebaseio.com/'
-    })
+
+    global firebase_init_checker
+    if not firebase_init_checker:
+        cred = credentials.Certificate('firebase_key.json')
+        firebase_admin.initialize_app(cred, {
+            'databaseURL': 'https://planeanchor-default-rtdb.firebaseio.com/'
+        })
+        firebase_init_checker = True
 
     dir = db.reference().child('hotspot_list').child(str(room_number))
     dir.child('plane_anchors_%s' % method).delete()
@@ -60,7 +68,7 @@ def host_plane(room_number, total_image_number, method):
                 transformation_matrix, width, height, param = get_plane_matrix_ours(mask, camera_intrinsics, point_cloud,
                                                                     projected_point_cloud, image_pixel, temp_image_path,
                                                                     sampled_point_threshold)
-            if method == "planercnn":
+            if method == "planercnn" or method == "planenet" or method == "mws":
                 transformation_matrix, width, height, param = get_plane_matrix_planercnn(mask, camera_intrinsics, image_pixel, plane_parameters[i],
                                                                         temp_image_path, rect_size_threshold)
 
@@ -192,7 +200,7 @@ def get_plane_matrix_planercnn(mask, camera, image, plane_parameter, image_path,
     rect = extract_rect(center_x, center_y, mask, camera, image, image_path, rect_size_threshold)
 
     plane_normal, offset = parsing_plane_parameter(plane_parameter)
-    print(plane_normal , offset)
+    print(plane_normal, offset)
     transformation_matrix, w_multiplier, h_multiplier = calc_transformation_matrix(plane_normal, offset, center_x, center_y, camera)
     transformation_matrix = np.transpose(transformation_matrix)
     print(transformation_matrix)
@@ -216,13 +224,11 @@ def get_plane_matrix_planercnn(mask, camera, image, plane_parameter, image_path,
     #                                [0, 0, 0, 1]])
     #
     # transformation_matrix = get_transformation_matrix(rotation_matrix, center_translation)
-
+    print(rect.get_width())
     if center_3d[2] < -10 or center_3d[2] > 0 or rect.get_width() < 100:
         return 0, 0, 0, 0
     width = abs(rect.get_width() * w_multiplier)
     height = abs(rect.get_height() * h_multiplier)
-
-
 
     return transformation_matrix, width, height, plane_parameter
 

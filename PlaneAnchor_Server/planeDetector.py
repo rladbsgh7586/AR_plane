@@ -1,11 +1,20 @@
 import os
-from evaluate import evaluate
 from options import parse_args
 
 def run_model(room_num, method):
     args = parse_args()
-    args.methods = 'f'
-    args.suffix = 'warping_refine'
+    if method == "planercnn":
+        from evaluate import evaluate
+        args.methods = 'f'
+        args.suffix = 'warping_refine'
+    if method == "mws":
+        from evaluate_planenet import evaluate
+        args.methods = 't'
+        args.suffix = 'gt'
+    if method == "planenet":
+        from evaluate_planenet import evaluate
+        args.methods = 'p'
+        args.suffix = 'warping_refine'
     args.dataset = 'inference'
     # args.dataset = 'my_dataset'
     args.customDataFolder = 'smartphone_indoor/%d_%s' % (room_num, method)

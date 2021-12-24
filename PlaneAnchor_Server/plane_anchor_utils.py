@@ -137,7 +137,7 @@ def normal_to_rotation_matrix(plane_normal):
 
 def extract_rect(x, y, mask, camera, image, image_path, size_ratio_threshold):
     min_x, min_y, max_x, max_y = 10000, 10000, -1, -1
-    segment_size = 0
+    segment_size = float(0)
     for i in range(mask.shape[0]):
         for j in range(mask.shape[1]):
             if mask[i][j] != 0:
@@ -153,13 +153,12 @@ def extract_rect(x, y, mask, camera, image, image_path, size_ratio_threshold):
 
     left_x, right_x, top_y, bottom_y = min_x, max_x, min_y, max_y
     plane_mask = np.zeros(np.shape(mask))
-    rect_size = 0
+    rect_size = float(0)
     for i in range(mask.shape[0]):
         for j in range(mask.shape[1]):
             if left_x <= j <= right_x and bottom_y >= i >= top_y:
                 rect_size += 1
                 plane_mask[i][j] = 1
-
     draw_rect(image, plane_mask, image_path)
 
     if segment_size/rect_size < size_ratio_threshold:

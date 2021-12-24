@@ -50,7 +50,7 @@ def count_device_data(image_path):
     data_num = 0
     for item in file_list:
         file_name = item.split(".")[0]
-        if file_name.isnumeric():
+        if file_name.isdigit():
             data_num += 1
     return data_num
 
@@ -169,10 +169,17 @@ def atoi(text):
 if __name__ == "__main__":
     host = "192.168.1.16"
     port = 7586
+    scenarios = [1,2,4,6,7]
+    for i in scenarios:
+        test_plane_anchor(room_num=i, skip_download=False, skip_inference=False, method="planercnn")
     # update_room_number()
     # listen_device(host, port)
-    test_plane_anchor(room_num=4, skip_download=False, skip_inference=False, method="planercnn")
-    # test_plane_anchor(room_num=4, skip_download=True, skip_inference=False, method="planercnn")
+    # test_plane_anchor(room_num=4, skip_download=False, skip_inference=False, method="planercnn")
+    # test_plane_anchor(room_num=4, skip_download=False, skip_inference=False, method="planenet")
+    # test_plane_anchor(room_num=4, skip_download=False, skip_inference=False, method="mws")
+    # test_plane_anchor(room_num=4, skip_download=True, skip_inference=True, method="planenet")
+    # test_plane_anchor(room_num=4, skip_download=True, skip_inference=True, method="mws")
+    # test_plane_anchor(room_num=4, skip_download=True, skip_inference=False, method="mws")
     # test_plane_anchor(room_num=4, skip_download=True, skip_inference=True, method="planercnn")
 
     # room_list = sorted(glob.glob("../Evaluation/data/*"), key=lambda x: (len(x), x))
