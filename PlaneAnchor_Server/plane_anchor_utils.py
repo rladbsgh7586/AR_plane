@@ -4,7 +4,9 @@ import matplotlib.pyplot as plt
 from skimage.measure import find_contours
 from utils import *
 from scipy.spatial.transform import Rotation as R
+from collections import Counter
 import math as m
+from PIL import Image
 
 
 class Rect:
@@ -31,6 +33,80 @@ class Rect:
 
     def get_height(self):
         return (self.top[1] - self.bottom[1]) * 1000
+
+
+
+class DBSCAN(object):
+    def __init__(self, x, epsilon, minpts):
+        # The number of input dataset
+        self.n = len(x)
+        # Euclidean distance
+        p, q = np.meshgrid(np.arange(self.n), np.arange(self.n))
+        self.dist = np.sqrt(np.sum(((x[p] - x[q]) ** 2), 2))
+        # label as visited points and noise
+        self.visited = np.full((self.n), False)
+        self.noise = np.full((self.n), False)
+        # DBSCAN Parameters
+        self.epsilon = epsilon
+        self.minpts = minpts
+        # Cluseter
+        self.idx = np.full((self.n), 0)
+        self.C = 0
+        self.input = x
+
+    def run(self):
+        # Clustering
+        for i, vector in enumerate(self.input):
+            if self.visited[i] == False:
+                self.visited[i] = True
+                self.neighbors = self.regionQuery(i)
+                if len(self.neighbors) > self.minpts:
+                    self.C += 1
+                    self.expandCluster(i)
+                else:
+                    self.noise[i] = True
+
+        return self.idx, self.noise
+
+    def regionQuery(self, i):
+        g = self.dist[i, :] < self.epsilon
+        Neighbors = np.where(g == True)[0].tolist()
+
+        return Neighbors
+
+    def expandCluster(self, i):
+        self.idx[i] = self.C
+        k = 0
+
+        while True:
+            try:
+                j = self.neighbors[k]
+            except:
+                pass
+            if self.visited[j] != True:
+                self.visited[j] = True
+
+                self.neighbors2 = self.regionQuery(j)
+
+                if len(self.neighbors2) > self.minpts:
+                    self.neighbors = self.neighbors + self.neighbors2
+
+            if self.idx[j] == 0:  self.idx[j] = self.C
+
+            k += 1
+            if len(self.neighbors) < k:
+                return
+
+    def sort(self):
+        cnum = np.max(self.idx)
+        self.cluster = []
+        self.noise = []
+        for i in range(cnum):
+            k = np.where(self.idx == (i + 1))[0].tolist()
+            self.cluster.append([self.input[k, :]])
+
+        self.noise = self.input[np.where(self.idx == 0)[0].tolist(), :]
+        return self.cluster, self.noise
 
 
 def get_2d_center_coordinate(mask):
@@ -175,6 +251,34 @@ def extract_rect(x, y, mask, camera, image, image_path, size_ratio_threshold):
     return rect
 
 
+def extract_rect_ours(x, y, mask, camera, image, image_path):
+    min_x, min_y, max_x, max_y = 10000, 10000, -1, -1
+    segment_size = float(0)
+    for i in range(mask.shape[0]):
+        for j in range(mask.shape[1]):
+            if mask[i][j] != 0:
+                segment_size += 1
+                if i > max_y:
+                    max_y = i
+                if i < min_y:
+                    min_y = i
+                if j > max_x:
+                    max_x = j
+                if j < min_x:
+                    min_x = j
+
+    left_x, right_x, top_y, bottom_y = min_x, max_x, min_y, max_y
+
+    l = convert_to_normal_coordinate(left_x, y, camera)
+    r = convert_to_normal_coordinate(right_x, y, camera)
+    t = convert_to_normal_coordinate(x, top_y, camera)
+    b = convert_to_normal_coordinate(x, bottom_y, camera)
+    # print(l, r, b, t)
+    rect = Rect(l, r, t, b)
+
+    return rect
+
+
 def plane_points_svd(point_cloud, index):
     x, y, z = [], [], []
 
@@ -192,6 +296,46 @@ def plane_points_svd(point_cloud, index):
     offset = plane_normal[0] * centroid[0] + plane_normal[1] * centroid[1] + plane_normal[2] * centroid[2]
 
     return plane_normal, offset[0], centroid
+
+
+def plane_points_svd_DBSCAN(point_cloud, index, epsilon=1, minpts=1):
+    x, y, z = [], [], []
+    sampled_pcd = []
+
+    for i in index:
+        sampled_pcd.append(list(point_cloud[i]))
+
+    filter = DBSCAN(np.array(sampled_pcd), epsilon=epsilon, minpts=minpts)
+    idx, noise = filter.run()
+    max_key = max(Counter(idx), key=Counter(idx).get)
+    if Counter(idx)[max_key] <= len(sampled_pcd) / 2:
+        new_index = index
+    else:
+        new_index = []
+        for i, key in zip(index, idx):
+            if key == max_key:
+                new_index.append(i)
+
+    for i in new_index:
+        x.append(point_cloud[i][0])
+        y.append(point_cloud[i][1])
+        z.append(point_cloud[i][2])
+
+    points = np.array([x, y, z])
+
+    centroid = np.mean(points, axis=1, keepdims=True)
+    svd = np.linalg.svd(points - centroid)
+    left = svd[0]
+    plane_normal = left[:, -1]
+    offset = plane_normal[0] * centroid[0] + plane_normal[1] * centroid[1] + plane_normal[2] * centroid[2]
+
+    return plane_normal, offset[0], centroid, new_index
+
+
+def param_diff(a, b):
+    diff = np.abs(np.subtract(a,b))
+    diff_mean = np.mean(diff)
+    return diff_mean
 
 
 def get_3d_plane_center(rect, plane_normal, offset):
@@ -222,6 +366,12 @@ def convert_to_normal_coordinate(x, y, camera):
 
     return u, v
 
+
+def convert_to_pixel_coordinate(u, v, camera):
+    x = camera[0] * u + camera[2]
+    y = - camera[1] * v + camera[3]
+
+    return round(x), round(y)
 
 def get_depth(u, v, parameter):
     offset = np.linalg.norm(parameter)
@@ -267,7 +417,6 @@ def plot_points(point_cloud, index):
         x_in.append(point_cloud[i][0])
         y_in.append(point_cloud[i][1])
         z_in.append(point_cloud[i][2])
-        print(point_cloud[i])
 
     x_out = []
     y_out = []
@@ -279,8 +428,39 @@ def plot_points(point_cloud, index):
             y_out.append(point_cloud[i][1])
             z_out.append(point_cloud[i][2])
 
-    ax.scatter(x_in, y_in, z_in, color='orange')
-    ax.scatter(x_out, y_out, z_out)
+    ax.scatter(x_in, z_in, y_in, color='orange')
+    ax.scatter(x_out, z_out, y_out)
+    plt.show()
+
+
+def plot_points_and_plane(point_cloud, index, normal):
+    print(normal)
+    x_in = []
+    y_in = []
+    z_in = []
+    fig = plt.figure()
+    ax = fig.gca(projection='3d')
+
+    for i in index:
+        x_in.append(point_cloud[i][0])
+        y_in.append(point_cloud[i][1])
+        z_in.append(point_cloud[i][2])
+
+    x_out = []
+    y_out = []
+    z_out = []
+
+    for i in range(len(point_cloud)):
+        if i not in index:
+            x_out.append(point_cloud[i][0])
+            y_out.append(point_cloud[i][1])
+            z_out.append(point_cloud[i][2])
+
+    xx, yy = np.meshgrid(range(-1, 2), range(-1, 2))
+    z = (-normal[0] * xx - normal[1] * yy - normal[3]) * 1. / normal[2]
+    ax.plot_surface(xx, z, yy, alpha=0.2)
+    ax.scatter(x_in, z_in, y_in, color='orange')
+    ax.scatter(x_out, z_out, y_out)
     plt.show()
 
 
@@ -337,3 +517,16 @@ def parsing_plane_parameter(plane_parameter):
     # print("offset", offset)
 
     return plane_normal, offset
+
+def visualize_depth_numpy(depth_map):
+    img = Image.fromarray(np.uint8((depth_map - np.min(depth_map)) / np.ptp(depth_map) * 255), 'L')
+    img.show()
+
+
+if __name__ == "__main__":
+    host = "192.168.1.16"
+    port = 7586
+    # scenarios = [22]
+    scenarios = [2,4,6,7]
+    for i in scenarios:
+        parameter_test(room_num=i, method="ours")

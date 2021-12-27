@@ -159,6 +159,7 @@ def test_plane_anchor(room_num, skip_download=False, skip_inference=False, metho
         run_model(room_num, method)
     host_plane(room_num, total_image_number, method)
 
+
 def natural_keys(text):
     return [atoi(c) for c in re.split(r'(\d+)', text)]
 
@@ -169,9 +170,10 @@ def atoi(text):
 if __name__ == "__main__":
     host = "192.168.1.16"
     port = 7586
-    scenarios = [1,2,4,6,7]
+    # scenarios = [1]
+    scenarios = [1,2,4,6,7, 8, 10, 11, 16, 17, 19, 20, 23, 25]
     for i in scenarios:
-        test_plane_anchor(room_num=i, skip_download=False, skip_inference=False, method="planercnn")
+        test_plane_anchor(room_num=i, skip_download=False, skip_inference=False, method="ours")
     # update_room_number()
     # listen_device(host, port)
     # test_plane_anchor(room_num=4, skip_download=False, skip_inference=False, method="planercnn")

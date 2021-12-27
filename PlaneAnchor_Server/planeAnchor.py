@@ -11,7 +11,9 @@ firebase_init_checker = False
 
 def host_plane(room_number, total_image_number, method):
     plane_size_threshold = 0.1
-    sampled_point_threshold = 5
+    sampled_point_threshold = 4
+    DBSCAN_epsilon = 0.5
+    param_diff_threshold = 1
     if method == "planercnn" or method == "gt":
         rect_size_threshold = 0.7
     if method == "planenet":
@@ -65,9 +67,9 @@ def host_plane(room_number, total_image_number, method):
                 continue
             temp_image_path = image_path + str(i) + ".png"
             if method == "ours":
-                transformation_matrix, width, height, param = get_plane_matrix_ours(mask, camera_intrinsics, point_cloud,
+                transformation_matrix, width, height, param, selector = get_plane_matrix_ours(mask, camera_intrinsics, point_cloud, plane_parameters[i],
                                                                     projected_point_cloud, image_pixel, temp_image_path,
-                                                                    sampled_point_threshold)
+                                                                    sampled_point_threshold, DBSCAN_epsilon, param_diff_threshold)
             if method == "planercnn" or method == "planenet" or method == "mws":
                 transformation_matrix, width, height, param = get_plane_matrix_planercnn(mask, camera_intrinsics, image_pixel, plane_parameters[i],
                                                                         temp_image_path, rect_size_threshold)
@@ -85,6 +87,9 @@ def host_plane(room_number, total_image_number, method):
                 transformation_matrix = np.transpose(transformation_matrix)
                 print("--------------",plane_number)
                 normal, offset = parsing_plane_parameter(param)
+                if method == "ours":
+                    if selector == "ours":
+                        f.write("this is our method plane")
                 f.write("plane%i_path: %s\n" % (plane_number, temp_image_path))
                 f.write("plane%i_normal: %s\n" % (plane_number, ' '.join(str(e) for e in normal)))
                 f.write("plane%i_offset: %s\n\n" % (plane_number, str(offset)))
@@ -108,6 +113,7 @@ def result_zero_padding(plane_mask, zero_padding_pixel):
 
 
 def get_point_cloud(file_name, confidence_value=-1):
+    depth_threshold = 5
     f = open(file_name, 'rb')
     data = f.read()
     point_cloud = []
@@ -122,11 +128,12 @@ def get_point_cloud(file_name, confidence_value=-1):
         depth.reverse()
         depth = abs(struct.unpack('f', depth)[0])
         if confidence >= confidence_value:
-            for j in range(coordinate_length - 1):
-                swap_data = bytearray(data[(i + j) * 4:(i + j + 1) * 4])
-                swap_data.reverse()
-                point_cloud.append(struct.unpack('f', swap_data)[0])
-            point_cloud.append(confidence)
+            if depth <= depth_threshold:
+                for j in range(coordinate_length - 1):
+                    swap_data = bytearray(data[(i + j) * 4:(i + j + 1) * 4])
+                    swap_data.reverse()
+                    point_cloud.append(struct.unpack('f', swap_data)[0])
+                point_cloud.append(confidence)
 
         # if depth <= 10:
         #     for j in range(coordinate_length):
@@ -157,40 +164,56 @@ def count_mask(a):
     return np.count_nonzero(a)
 
 
-def get_plane_matrix_ours(mask, camera, point_cloud, projected_point_cloud, image, image_path, sampled_point_threshold):
+def get_plane_matrix_ours(mask, camera, point_cloud, plane_parameter, projected_point_cloud, image, image_path, sampled_point_threshold, DBSCAN_epsilon, param_diff_threshold):
     # get 2d center coordinate
     center_x, center_y = get_2d_center_coordinate(mask)
     # plane range in normal coordinate [l, r, t, b]
-    rect = extract_rect(center_x, center_y, mask, camera, image, image_path)
+    rect = extract_rect_ours(center_x, center_y, mask, camera, image, image_path)
 
     sampled_point_index = []
+    new_mask = np.zeros(np.shape(mask))
     for i in range(len(projected_point_cloud)):
         xy = projected_point_cloud[i]
-        if rect.is_in_rect(xy[0], xy[1]):
-            sampled_point_index.append(i)
+        pixel_x, pixel_y = convert_to_pixel_coordinate(xy[0], xy[1], camera)
+        try:
+            if mask[pixel_y][pixel_x] == 1:
+                new_mask[pixel_y][pixel_x] = 1
+                sampled_point_index.append(i)
+        except:
+            pass
 
-    # plot_points(point_cloud, sampled_point_index)
+    plane_normal, offset = parsing_plane_parameter(plane_parameter)
+    selector = "planercnn"
+    parameter_planercnn = plane_normal * offset
+
     if len(sampled_point_index) > sampled_point_threshold:
-        plane_normal, offset, centroid = plane_points_svd(point_cloud, sampled_point_index)
-        plot_points(point_cloud, sampled_point_index)
-        center_3d = get_3d_point(convert_to_normal_coordinate(center_x, center_y, camera), plane_normal, offset)
-        if center_3d[2] < -10 or center_3d[2] > 0:
-            return 0, 0, 0, 0
-        print("center: ",center_3d)
-        print("plane_normal", plane_normal)
-        width = abs(rect.get_width() * center_3d[2])
-        height = abs(rect.get_height() * center_3d[2])
+        plane_normal_svd, offset_svd, centroid, sampled_point_index = plane_points_svd_DBSCAN(point_cloud, sampled_point_index,
+                                                                                      DBSCAN_epsilon)
+        if len(sampled_point_index) > sampled_point_threshold:
+            parameter_ours = plane_normal_svd * offset_svd
+            if param_diff(parameter_ours, parameter_planercnn) < param_diff_threshold:
+                plane_normal = plane_normal_svd
+                offset = offset_svd
+                selector = "ours"
 
-        rotation_matrix = normal_to_rotation_matrix(np.array(plane_normal))
+    transformation_matrix, w_multiplier, h_multiplier = calc_transformation_matrix(plane_normal, offset, center_x,
+                                                                                   center_y, camera)
+    transformation_matrix = np.transpose(transformation_matrix)
 
-        center_translation = np.array([[1, 0, 0, center_3d[0]],
-                                       [0, 1, 0, center_3d[1]],
-                                       [0, 0, 1, center_3d[2]],
-                                       [0, 0, 0, 1]])
+    center_3d = get_3d_point(convert_to_normal_coordinate(center_x, center_y, camera), plane_normal, offset)
+    center_3d[2] = - center_3d[2]
+    plane_normal[2] = - plane_normal[2]
 
-        transformation_matrix = get_transformation_matrix(rotation_matrix, center_translation)
-        return transformation_matrix, width, height, plane_normal * offset
-    return 0, 0, 0, 0
+    print("center: ", center_3d)
+    print("plane_normal", plane_normal)
+
+    if center_3d[2] < -10 or center_3d[2] > 0 or rect.get_width() < 100:
+        return 0, 0, 0, 0, 0
+    width = abs(rect.get_width() * center_3d[2])
+    height = abs(rect.get_height() * center_3d[2])
+
+    return transformation_matrix, width, height, plane_normal * offset, selector
+
 
 def get_plane_matrix_planercnn(mask, camera, image, plane_parameter, image_path, rect_size_threshold):
     # get 2d center coordinate
@@ -224,7 +247,6 @@ def get_plane_matrix_planercnn(mask, camera, image, plane_parameter, image_path,
     #                                [0, 0, 0, 1]])
     #
     # transformation_matrix = get_transformation_matrix(rotation_matrix, center_translation)
-    print(rect.get_width())
     if center_3d[2] < -10 or center_3d[2] > 0 or rect.get_width() < 100:
         return 0, 0, 0, 0
     width = abs(rect.get_width() * w_multiplier)

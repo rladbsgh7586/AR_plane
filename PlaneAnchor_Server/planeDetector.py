@@ -3,7 +3,7 @@ from options import parse_args
 
 def run_model(room_num, method):
     args = parse_args()
-    if method == "planercnn":
+    if method == "planercnn" or method == "ours":
         from evaluate import evaluate
         args.methods = 'f'
         args.suffix = 'warping_refine'

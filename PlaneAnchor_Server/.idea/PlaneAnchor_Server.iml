@@ -4,6 +4,9 @@
     <content url="file://$MODULE_DIR$">
       <excludeFolder url="file://$MODULE_DIR$/inference" />
       <excludeFolder url="file://$MODULE_DIR$/smartphone_indoor" />
+      <excludeFolder url="file://$MODULE_DIR$/parameter_test" />
+      <excludeFolder url="file://$MODULE_DIR$/PlaneNet" />
+      <excludeFolder url="file://$MODULE_DIR$/checkpoint" />
     </content>
     <orderEntry type="jdk" jdkName="Python 2.7 (PlaneAnchor_Server_planenet)" jdkType="Python SDK" />
     <orderEntry type="sourceFolder" forTests="false" />
