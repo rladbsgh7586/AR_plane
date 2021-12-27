@@ -516,6 +516,7 @@ def make_gt_depth_map(original_depth_map, gt_label):
                     if original_depth_map[y][x] != 0:
                         depths.append(original_depth_map[y][x])
 
+        print(depths)
         q5, q95 = np.quantile(depths, 0.05), np.quantile(depths, 0.95)
 
         for y in range(480):
@@ -625,7 +626,8 @@ def data_load(scenario, method):
         json_to_dataset(new_input_path + "/gt/labeling/")
 
         depth_list = glob.glob(new_input_path + "/gt/depth/*")
-        if depth_list == []:
+        labeling_list = glob.glob(new_input_path + "/gt/labeling/*_json")
+        if depth_list == [] and not labeling_list == []:
             get_gt_depth(gt_path, scenario)
 
     # run with each method
@@ -690,7 +692,8 @@ def delete_images_not_in_gt(frame_names, image_path):
 
 
 if __name__ == "__main__":
-    scenarios = [1,2,4,6,7]
+    # scenarios = [1,2,4,6,7]
+    scenarios = [8,10,11,16,17,19,20,23,25]
     # scenarios = [1]
     methods = ["arcore", "planenet", "planercnn"]
 

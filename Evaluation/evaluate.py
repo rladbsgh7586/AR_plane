@@ -7,14 +7,15 @@ from PIL import Image
 from math import sqrt
 
 
-def evaluate(scenario, method):
+def evaluate(scenario, method, RMSE_threshold, IC_threshold, version = "v1"):
+    print("RMSE threshold: ", RMSE_threshold)
+    print("IC threshold: ", IC_threshold)
     for method_name in method:
         # TP, FP, TN, FN
         confusion_matrix = np.array([0, 0, 0, 0])
         C = []
         IC = []
         for scenario_num in scenario:
-            print(scenario_num)
             root_path = "data/HOST%d/eval/" % scenario_num
             gt_depth_path = root_path + "gt/depth/"
             gt_depth_maps = sorted(glob.glob(gt_depth_path + "*depth*"))
@@ -27,7 +28,7 @@ def evaluate(scenario, method):
 
             predicted_path = root_path + "%s/predicted_depth/" % method_name
             for frame_name in frame_names:
-                c_matrix, coverages, incorrect_coverages = evaluate_confusion_matrix(predicted_path, gt_depth_path, frame_name)
+                c_matrix, coverages, incorrect_coverages = evaluate_confusion_matrix(predicted_path, gt_depth_path, frame_name, RMSE_threshold, IC_threshold, version)
                 confusion_matrix += np.array(c_matrix)
                 C += coverages
                 IC += incorrect_coverages
@@ -41,11 +42,9 @@ def evaluate(scenario, method):
         print()
 
 
-def evaluate_confusion_matrix(predict_path, gt_path, frame_name):
+def evaluate_confusion_matrix(predict_path, gt_path, frame_name, RMSE_threshold = 0.5, IC_threshold = 0.5, version = "v1"):
     TP, FP, TN, FN = 0, 0, 0, 0
     IOU_threshold = 0.5
-    RMSE_threshold = 0.5
-    IC_threshold = 0.5
     if os.path.exists(predict_path + "%s_depth_maps.npy" % frame_name):
         predict_depth_maps = np.load(predict_path + "%s_depth_maps.npy" % frame_name)
         predict_masks = np.load(predict_path + "%s_masks.npy" % frame_name)
@@ -54,9 +53,12 @@ def evaluate_confusion_matrix(predict_path, gt_path, frame_name):
         predict_depth_maps = []
         predict_masks = []
         predict_plane_names = []
-    gt_depth_maps = np.load(gt_path + "%s_depth_maps.npy" % frame_name)
-    gt_masks = np.load(gt_path + "%s_masks.npy" % frame_name)
-
+    if version == "v2":
+        gt_depth_maps = np.load(gt_path + "%s_depth_maps_v2.npy" % frame_name)
+        gt_masks = np.load(gt_path + "%s_masks_v2.npy" % frame_name)
+    else:
+        gt_depth_maps = np.load(gt_path + "%s_depth_maps.npy" % frame_name)
+        gt_masks = np.load(gt_path + "%s_masks.npy" % frame_name)
     prediction = np.zeros((np.shape(predict_masks)[0], 4))
     gt_index = 0
     for gt_mask, gt_depth in zip(gt_masks, gt_depth_maps):
@@ -92,6 +94,50 @@ def evaluate_confusion_matrix(predict_path, gt_path, frame_name):
     FN += (gt_num - TP)
 
     return [TP, FP, TN, FN], coverages, incorrect_coverages
+
+
+def make_v2_dataset(scenario, method):
+    for scenario_num in scenario:
+        root_path = "data/HOST%d/eval/" % scenario_num
+        gt_depth_path = root_path + "gt/depth/"
+        gt_depth_maps = sorted(glob.glob(gt_depth_path + "*depth*"))
+
+        frame_names = []
+        for path in gt_depth_maps:
+            name = path.split("/")[-1].split("_")[0]
+            if name not in frame_names:
+                frame_names.append(name)
+
+        for frame_name in frame_names:
+            gt_depth_maps = np.load(gt_depth_path + "%s_depth_maps.npy" % frame_name)
+            gt_masks = np.load(gt_depth_path + "%s_masks.npy" % frame_name)
+            v2_gt_depth_maps = []
+            v2_gt_masks = []
+            for gt_mask, gt_depth in zip(gt_masks, gt_depth_maps):
+                checker = False
+                for method_name in method:
+                    predict_path = root_path + "%s/predicted_depth/" % method_name
+
+                    if os.path.exists(predict_path + "%s_depth_maps.npy" % frame_name):
+                        predict_depth_maps = np.load(predict_path + "%s_depth_maps.npy" % frame_name)
+                        predict_masks = np.load(predict_path + "%s_masks.npy" % frame_name)
+                        predict_plane_names = np.load(predict_path + "%s_plane_names.npy" % frame_name)
+                    else:
+                        predict_depth_maps = []
+                        predict_masks = []
+                        predict_plane_names = []
+                    for predict_mask, predict_depth, plane_name in zip(predict_masks, predict_depth_maps,
+                                                                       predict_plane_names):
+                        IOU, RMSE = get_IOU(gt_mask, predict_mask, gt_depth, predict_depth)
+                        if IOU > 0.5:
+                            v2_gt_depth_maps.append(gt_depth)
+                            v2_gt_masks.append(gt_mask)
+                            checker = True
+                            break
+                    if checker == True:
+                        break
+            np.save(gt_depth_path + "%s_depth_maps_v2.npy" % frame_name, np.array(v2_gt_depth_maps))
+            np.save(gt_depth_path + "%s_masks_v2.npy" % frame_name, np.array(v2_gt_masks))
 
 
 def get_IOU(gt_mask, predict_mask, gt_depth, predict_depth):
@@ -137,6 +183,15 @@ def visualize_depth_numpy(depth_map):
 
 
 if __name__ == "__main__":
-    scenario = [1,2,4,6,7]
+    # scenario = [1,2,4,6,7]afsafasfasfasfs
+    scenarios = [1,2,4,6,7, 8, 10, 11, 16, 17, 19, 20, 23, 25]
     method = ["arcore", "planercnn", "planenet"]
-    evaluate(scenario, method)
+    # method = ["arcore"]
+    # evaluate(scenarios, method, 0.5, 0.5, "v2")
+    # make_v2_dataset(scenarios, method)
+    RMSE_threshold = [0.25, 0.5, 0.75, 1, 10000]
+    for i in RMSE_threshold:
+        evaluate(scenarios, method, i, 0.5, "v2")
+    IC_threshold = [0.25, 0.5, 0.75, 1, 10000]
+    for i in IC_threshold:
+        evaluate(scenarios, method, 0.5, i, "v2")
