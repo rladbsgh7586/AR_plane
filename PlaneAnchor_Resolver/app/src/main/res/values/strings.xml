@@ -84,4 +84,20 @@
     <item>Enable Instant Placement</item>
   </string-array>
 
+  <string-array name="gtmode">
+    <item>FALSE</item>
+    <item>CAPTURE</item>
+  </string-array>
+
+  <string-array name="method">
+    <item>none</item>
+    <item>arcore</item>
+    <item>planercnn</item>
+    <item>mws</item>
+    <item>planenet</item>
+    <item>gt</item>
+    <item>ours</item>
+  </string-array>
+
+
 </resources>

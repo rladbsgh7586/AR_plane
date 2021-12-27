@@ -44,7 +44,10 @@ import android.util.Log;
 import android.view.GestureDetector;
 import android.view.MotionEvent;
 import android.view.View;
+import android.widget.AdapterView;
+import android.widget.ArrayAdapter;
 import android.widget.Button;
+import android.widget.Spinner;
 import android.widget.TextView;
 import android.widget.Toast;
 
@@ -113,6 +116,7 @@ import com.google.firebase.database.DatabaseError;
 import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
+import java.lang.reflect.Array;
 import java.nio.ByteBuffer;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
@@ -267,6 +271,7 @@ public class HelloArActivity extends AppCompatActivity implements SampleRender.R
   private final float[] projectionMatrix = new float[16];
   private final float[] modelViewMatrix = new float[16]; // view x model
   private final float[] modelViewProjectionMatrix = new float[16]; // projection x view x model
+  private final float[] invModelViewMatrix = new float[16]; // projection x view x model
   private final float[] sphericalHarmonicsCoefficients = new float[9 * 3];
   private final float[] viewInverseMatrix = new float[16];
   private final float[] worldLightDirection = {0.0f, 0.0f, 0.0f, 0.0f};
@@ -307,13 +312,20 @@ public class HelloArActivity extends AppCompatActivity implements SampleRender.R
     CAPTURE
   }
 
+  private GroundTruthMode gtMode = GroundTruthMode.FALSE;
+  String method = "none";
+  //  String method = "gt";
+//  String method = "arcore";
+//  String method = "planercnn";
+//  String method = "mws";
+//  String method = "ours";
+
   // Locks needed for synchronization
   private final Object singleTapLock = new Object();
   private final Object anchorLock = new Object();
 
   private GestureDetector gestureDetector;
   private final SnackbarHelper snackbarHelper = new SnackbarHelper();
-  private Button hostButton;
   private Button resolveButton;
   private Button scenarioButton;
   private Button imageHostButton;
@@ -338,7 +350,6 @@ public class HelloArActivity extends AppCompatActivity implements SampleRender.R
 
   // Tracks app's specific state changes.
   private AppState appState = AppState.Idle;
-  private GroundTruthMode gtMode = GroundTruthMode.CAPTURE;
   private int REQUEST_MP4_SELECTOR = 1;
   private int STORE_ARCORE_PLANES = 0;
 
@@ -548,7 +559,8 @@ public class HelloArActivity extends AppCompatActivity implements SampleRender.R
       return false;
 
     if (gtMode == GroundTruthMode.CAPTURE){
-      firebaseManager.setRoomCode(scenario);
+      firebaseManager.setRoomCode(scenario, method);
+      firebaseManager.cleanServerPredictImages();
       frameTimestamps = firebaseManager.readFrameTimestamps();
     }
 
@@ -779,6 +791,49 @@ public class HelloArActivity extends AppCompatActivity implements SampleRender.R
     tapHelper = new TapHelper(/*context=*/ this);
     surfaceView.setOnTouchListener(tapHelper);
 
+    Spinner gtModeSpinner = (Spinner) findViewById(R.id.gtmode_spinner);
+    ArrayAdapter<CharSequence> gtModeAdapter = ArrayAdapter.createFromResource(this, R.array.gtmode, android.R.layout.simple_spinner_item);
+    gtModeAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
+    gtModeSpinner.setAdapter(gtModeAdapter);
+    gtModeSpinner.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
+      @Override
+      public void onItemSelected(AdapterView<?> parent, View view, int position, long id) {
+        String result = gtModeSpinner.getItemAtPosition(position).toString();
+        if(result.equals("FALSE")){
+          gtMode = GroundTruthMode.FALSE;
+        }
+        if(result.equals("TRUE")){
+          gtMode = GroundTruthMode.TRUE;
+        }
+        if(result.equals("CAPTURE")){
+          gtMode = GroundTruthMode.CAPTURE;
+        }
+      }
+
+      @Override
+      public void onNothingSelected(AdapterView<?> parent) {
+
+      }
+    });
+
+    Spinner methodSpinner = (Spinner) findViewById(R.id.method_spinner);
+    ArrayAdapter<CharSequence> methodAdapter = ArrayAdapter.createFromResource(this, R.array.method, android.R.layout.simple_spinner_item);
+    methodAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
+    methodSpinner.setAdapter(methodAdapter);
+    methodSpinner.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
+      @Override
+      public void onItemSelected(AdapterView<?> parent, View view, int position, long id) {
+        Log.d("yunho-spinner", methodSpinner.getItemAtPosition(position).toString());
+        method = methodSpinner.getItemAtPosition(position).toString();
+      }
+
+      @Override
+      public void onNothingSelected(AdapterView<?> parent) {
+
+      }
+    });
+
+
     // Set up renderer.
     render = new SampleRender(surfaceView, this, getAssets());
 
@@ -809,8 +864,6 @@ public class HelloArActivity extends AppCompatActivity implements SampleRender.R
     surfaceView.setOnTouchListener((v, event) -> gestureDetector.onTouchEvent(event));
 
     // Initialize UI components.
-    hostButton = findViewById(R.id.host_button);
-    hostButton.setOnClickListener((view) -> onHostButtonPress());
     resolveButton = findViewById(R.id.resolve_button);
     resolveButton.setOnClickListener((view) -> onResolveButtonPress());
     scenarioButton = findViewById(R.id.scenario_button);
@@ -821,7 +874,6 @@ public class HelloArActivity extends AppCompatActivity implements SampleRender.R
 
 //    findViewById(R.id.playback_button).setVisibility(View.GONE);
 //    resolveButton.setVisibility(View.GONE);
-    hostButton.setVisibility(View.GONE);
     imageHostButton.setVisibility(View.GONE);
 
     // Initialize Cloud Anchor variables.
@@ -1250,16 +1302,6 @@ public class HelloArActivity extends AppCompatActivity implements SampleRender.R
       return;
     }
     Camera camera = frame.getCamera();
-    if(gtMode == GroundTruthMode.CAPTURE && appState == AppState.Playingback){
-      if(frameTimestamps.contains(frame.getAndroidCameraTimestamp())){
-        keyFrameCount += 1;
-        Log.d("yunho-timestamp", Long.toString(frame.getAndroidCameraTimestamp()));
-        Bitmap bitmap = ImageHelper.viewToBitmap(surfaceView);
-        byte[] jpeg = ImageHelper.bitmapToJPEG(bitmap);
-        firebaseManager.uploadPredictedImage(jpeg, String.format("%03d_predict", keyFrameCount));
-      }
-    }
-
     // Update BackgroundRenderer state to match the depth settings.
     try {
       backgroundRenderer.setUseDepthVisualization(
@@ -1399,7 +1441,7 @@ public class HelloArActivity extends AppCompatActivity implements SampleRender.R
         if (distance < 0) { // Plane is back-facing.
           continue;
         }
-        uploadedAnchor = firebaseManager.uploadPlane(plane, anchor, keyFrameCount);
+        uploadedAnchor = firebaseManager.uploadPlane(plane, anchor, keyFrameCount, method);
         if(uploadedAnchor != null){
           makePlaneRenders(uploadedAnchor, "PLANE"+Integer.toString(i));
           i+=1;
@@ -1425,6 +1467,20 @@ public class HelloArActivity extends AppCompatActivity implements SampleRender.R
         shouldDrawAnchor = true;
       }
     }
+
+    if(gtMode == GroundTruthMode.CAPTURE && appState == AppState.Playingback){
+      if(frameTimestamps.contains(frame.getAndroidCameraTimestamp())){
+        keyFrameCount += 1;
+        anchor.getPose().toMatrix(modelMatrix, 0);
+        Matrix.multiplyMM(modelViewMatrix, 0, viewMatrix, 0, modelMatrix, 0);
+        Matrix.invertM(invModelViewMatrix, 0, modelViewMatrix, 0);
+        Log.d("yunho-timestamp", Long.toString(frame.getAndroidCameraTimestamp()));
+        Bitmap bitmap = ImageHelper.viewToBitmap(surfaceView);
+        byte[] jpeg = ImageHelper.bitmapToJPEG(bitmap);
+        firebaseManager.uploadPredictedImage(jpeg, String.format("%03d_predict", keyFrameCount), invModelViewMatrix);
+      }
+    }
+
 
     if(shouldDrawAnchor==true) {
       // Get the current pose of an Anchor in world space. The Anchor pose is updated
@@ -1462,7 +1518,8 @@ public class HelloArActivity extends AppCompatActivity implements SampleRender.R
         planeRenders.clear();
         int i = 0;
         for(PlaneAnchor planeAnchor: planeAnchors){
-          makePlaneRenders(planeAnchor, "PLANE"+Integer.toString(i));
+          Log.d("yunho-plane", planeAnchor.getName());
+          makePlaneRenders(planeAnchor, planeAnchor.getName());
           i+=1;
         }
         shouldMakeRenders=false;
@@ -1616,7 +1673,6 @@ public class HelloArActivity extends AppCompatActivity implements SampleRender.R
       return;
     }
     resolveButton.setEnabled(false);
-    hostButton.setText(R.string.cancel);
     imageHostButton.setVisibility(View.VISIBLE);
     snackbarHelper.showMessageWithDismiss(this, getString(R.string.snackbar_on_host));
 
@@ -1661,7 +1717,6 @@ public class HelloArActivity extends AppCompatActivity implements SampleRender.R
 
   /** Resets the mode of the app to its initial state and removes the anchors. */
   private void resetMode() {
-    hostButton.setText(R.string.host_button_text);
 //    hostButton.setEnabled(true);
     resolveButton.setText(R.string.resolve_button_text);
     resolveButton.setEnabled(true);
@@ -1682,7 +1737,6 @@ public class HelloArActivity extends AppCompatActivity implements SampleRender.R
   }
 
   private void myResetMode() {
-    hostButton.setText(R.string.host_button_text);
 //    hostButton.setEnabled(true);
     resolveButton.setText(R.string.resolve_button_text);
     resolveButton.setEnabled(true);
@@ -1718,7 +1772,7 @@ public class HelloArActivity extends AppCompatActivity implements SampleRender.R
                       cloudAnchorId, resolveListener, SystemClock.uptimeMillis());
             });
 
-    firebaseManager.readData(firebaseManager.getPlaneAnchorsRef(roomCode), new myCallBack() {
+    firebaseManager.readData(firebaseManager.getPlaneAnchorsRef(roomCode, method), new myCallBack() {
       @Override
       public void onSuccess(ArrayList<PlaneAnchor> result) {
         planeAnchors.addAll(result);

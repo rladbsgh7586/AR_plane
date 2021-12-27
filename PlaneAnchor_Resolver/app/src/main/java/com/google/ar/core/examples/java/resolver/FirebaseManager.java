@@ -153,17 +153,16 @@ class FirebaseManager {
         DatabaseReference roomRef = hotspotListRef.child(String.valueOf(roomCode));
         currentRoomRef = hotspotListRef.child(String.valueOf(roomCode));
         currentRoomImgRef = storageImgRef.child(String.valueOf(roomCode));
-        currentRoomPredictImgRef = storageImgRef.child(roomCode+"_predict");
         roomRef.child(KEY_DISPLAY_NAME).setValue(DISPLAY_NAME_VALUE);
         roomRef.child(KEY_ANCHOR_ID).setValue(cloudAnchorId);
         roomRef.child(KEY_TIMESTAMP).setValue(System.currentTimeMillis());
     }
 
-    void setRoomCode(Long roomCode){
+    void setRoomCode(Long roomCode, String predictName){
         DatabaseReference roomRef = hotspotListRef.child(String.valueOf(roomCode));
         currentRoomRef = hotspotListRef.child(String.valueOf(roomCode));
         currentRoomImgRef = storageImgRef.child(String.valueOf(roomCode));
-        currentRoomPredictImgRef = storageImgRef.child(roomCode+"_predict");
+        currentRoomPredictImgRef = storageImgRef.child(roomCode+"_predict_"+predictName);
     }
 
     /**
@@ -202,16 +201,14 @@ class FirebaseManager {
             public void onDataChange(DataSnapshot dataSnapshot) {
                 for(DataSnapshot snapshot: dataSnapshot.getChildren()){
                     PlaneAnchor plane = snapshot.getValue(PlaneAnchor.class);
-
-                    Log.d("yunho", snapshot.child("transformation_matrix").getValue().getClass().toString());
+                    Log.d("yunho_height", Long.toString(plane.getHeight()));
+                    plane.setPlaneName(snapshot.child("plane_name").getValue().toString());
+                    Log.d("yunho_name", plane.getName());
                     List<Double> matrixList = (List<Double>) snapshot.child("transformation_matrix").getValue();
-                    Log.d("yunho",Arrays.toString(matrixList.toArray()));
                     float[] matrixArray = new float[matrixList.size()];
                     int i = 0;
 
                     for (Object d : matrixList) {
-                        Log.d("yunho",String.valueOf(d));
-                        Log.d("yunho", d.getClass().toString());
                         if(d.getClass() == Double.class){
                             matrixArray[i++] = (float)((double)d); // Or whatever default you want.
                         }
@@ -225,7 +222,6 @@ class FirebaseManager {
                     }
                     plane.setTransformationMatrix(matrixArray);
                     planeAnchors.add(plane);
-                    Log.d("yunho-2", Boolean.toString(planeAnchors.isEmpty()));
                 }
                 callBack.onSuccess(planeAnchors);
             }
@@ -237,8 +233,8 @@ class FirebaseManager {
         });
     }
 
-    DatabaseReference getPlaneAnchorsRef(Long roomCode){
-        return hotspotListRef.child(String.valueOf(roomCode)).child("plane_anchors");
+    DatabaseReference getPlaneAnchorsRef(Long roomCode, String method){
+        return hotspotListRef.child(String.valueOf(roomCode)).child("plane_anchors_" + method);
     }
 
     void uploadImage(byte[] file, String fileName){
@@ -256,7 +252,11 @@ class FirebaseManager {
         });
     };
 
-    public void uploadPredictedImage(byte[] file, String fileName){
+    public void uploadPredictedImage(byte[] file, String fileName, float[] invModelViewMatrix){
+        StorageMetadata metadata = new StorageMetadata.Builder()
+                .setCustomMetadata("inverseModelViewMatrix", Arrays.toString(invModelViewMatrix))
+                .build();
+        Log.d("yunho-filename", fileName);
         UploadTask uploadTask = currentRoomPredictImgRef.child(fileName+".jpg").putBytes(file);
         uploadTask.addOnFailureListener(new OnFailureListener() {
             @Override
@@ -265,8 +265,7 @@ class FirebaseManager {
         }).addOnSuccessListener(new OnSuccessListener<UploadTask.TaskSnapshot>() {
             @Override
             public void onSuccess(UploadTask.TaskSnapshot taskSnapshot) {
-                // taskSnapshot.getMetadata() contains file metadata such as size, content-type, etc.
-                // ...
+                currentRoomPredictImgRef.child(fileName+".jpg").updateMetadata(metadata);
             }
         });
     }
@@ -300,7 +299,7 @@ class FirebaseManager {
 ////
 //    };
 
-    PlaneAnchor uploadPlane(Plane plane, Anchor anchor, int num){
+    PlaneAnchor uploadPlane(Plane plane, Anchor anchor, int num, String method){
         PlaneAnchor planeAnchor = null;
         if(!planeID.contains(plane.toString())){
             Log.d("yunho",plane.toString());
@@ -316,15 +315,31 @@ class FirebaseManager {
             }
 
             List<Double> list = Arrays.asList(doublePlaneAnchorMatrix);
-            DatabaseReference ref = currentRoomRef.child("plane_anchors").child("plane"+Integer.toString(planeID.size())).getRef();
+            DatabaseReference ref = currentRoomRef.child("plane_anchors_"+method).child("plane"+Integer.toString(planeID.size())).getRef();
             ref.child("transformation_matrix").setValue(list);
             ref.child("width").setValue(plane.getExtentX() * 1000);
             ref.child("height").setValue(plane.getExtentZ() * 1000);
+            ref.child("plane_name").setValue(Integer.toString(num));
 
-            planeAnchor = new PlaneAnchor(planeAnchorMatrix, (int)(plane.getExtentX() * 1000), (int)(plane.getExtentZ() * 1000));
+            planeAnchor = new PlaneAnchor(planeAnchorMatrix, (int)plane.getExtentX() * 1000, (int)plane.getExtentZ() * 1000, plane.toString());
         }
         return planeAnchor;
     };
+
+
+    void cleanServerPredictImages(){
+        Log.d("yunho-cleanup", "predicted_images");
+        currentRoomPredictImgRef.listAll()
+                .addOnSuccessListener(new OnSuccessListener<ListResult>() {
+                    @Override
+                    public void onSuccess(ListResult listResult) {
+                        for (StorageReference item : listResult.getItems()) {
+                            // All the items under listRef.
+                            item.delete();
+                        }
+                    }
+                });
+    }
 
     /**
      * Resets the current room listener registered using {@link #registerNewListenerForRoom(Long,

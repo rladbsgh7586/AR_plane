@@ -312,6 +312,8 @@ public class HelloArActivity extends AppCompatActivity implements SampleRender.R
     FALSE
   }
 
+  String method = "arcore";
+
   // Locks needed for synchronization
   private final Object singleTapLock = new Object();
   private final Object anchorLock = new Object();
@@ -343,7 +345,7 @@ public class HelloArActivity extends AppCompatActivity implements SampleRender.R
 
   // Tracks app's specific state changes.
   private AppState appState = AppState.Idle;
-  private GroundTruthMode gtMode = GroundTruthMode.TRUE;
+  private GroundTruthMode gtMode = GroundTruthMode.FALSE;
   private int REQUEST_MP4_SELECTOR = 1;
   private int STORE_ARCORE_PLANES = 0;
 
@@ -1444,6 +1446,9 @@ public class HelloArActivity extends AppCompatActivity implements SampleRender.R
 //            keyFrameSelector
 //            using point intersection between previous keyframe and currentframe
             if(CountIntersection(previousKeyFrameIds, currentPointSet) <= 0){
+              Log.d("yunho", "keyFrameSelected "+Integer.toString(keyFrameCount));
+              Log.d("yunho-pcd_previous", previousKeyFrameIds.toString());
+              Log.d("yunho-pcd_current", currentPointSet.toString());
               previousKeyFrameIds = currentPointSet;
               keyFrameCount += 1;
               try{
@@ -1481,6 +1486,7 @@ public class HelloArActivity extends AppCompatActivity implements SampleRender.R
 
     PlaneAnchor uploadedAnchor = null;
     if(STORE_ARCORE_PLANES == 1){
+      firebaseManager.cleanServerPlanes(method);
       int i = 1;
       for(Plane plane : session.getAllTrackables(Plane.class)){
         if (plane.getTrackingState() != TrackingState.TRACKING || plane.getSubsumedBy() != null) {
@@ -1491,12 +1497,13 @@ public class HelloArActivity extends AppCompatActivity implements SampleRender.R
         if (distance < 0) { // Plane is back-facing.
           continue;
         }
-        uploadedAnchor = firebaseManager.uploadPlane(plane, anchor, keyFrameCount);
+        uploadedAnchor = firebaseManager.uploadPlane(plane, anchor, keyFrameCount, method);
         if(uploadedAnchor != null){
           makePlaneRenders(uploadedAnchor, "PLANE"+Integer.toString(i));
           i+=1;
         }
       }
+      firebaseManager.cleanPlaneID();
       STORE_ARCORE_PLANES = 0;
 //      setNewAnchor(null);
     }
@@ -1703,6 +1710,7 @@ public class HelloArActivity extends AppCompatActivity implements SampleRender.R
     if (currentMode == HostResolveMode.HOSTINGDONE) {
       imageHostingTouched=true;
       imageHostButton.setText(R.string.hosting_done);
+      firebaseManager.cleanServerImages();
       currentMode = HostResolveMode.PLANEHOSTING;
 //      snackbarHelper.showMessageWithDismiss(this, getString(R.string.snackbar_on_host_image));
       return;
@@ -1829,7 +1837,7 @@ public class HelloArActivity extends AppCompatActivity implements SampleRender.R
                       cloudAnchorId, resolveListener, SystemClock.uptimeMillis());
             });
 
-    firebaseManager.readData(firebaseManager.getPlaneAnchorsRef(roomCode), new myCallBack() {
+    firebaseManager.readData(firebaseManager.getPlaneAnchorsRef(roomCode, method), new myCallBack() {
       @Override
       public void onSuccess(ArrayList<PlaneAnchor> result) {
         planeAnchors.addAll(result);

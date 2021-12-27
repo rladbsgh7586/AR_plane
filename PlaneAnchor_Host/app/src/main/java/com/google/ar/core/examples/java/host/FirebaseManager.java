@@ -34,6 +34,7 @@ import com.google.firebase.database.Transaction;
 import com.google.firebase.database.ValueEventListener;
 import com.google.android.gms.tasks.OnSuccessListener;
 import com.google.firebase.storage.FirebaseStorage;
+import com.google.firebase.storage.ListResult;
 import com.google.firebase.storage.StorageMetadata;
 import com.google.firebase.storage.StorageReference;
 import com.google.firebase.storage.UploadTask;
@@ -229,8 +230,8 @@ class FirebaseManager {
         });
     }
 
-    DatabaseReference getPlaneAnchorsRef(Long roomCode){
-        return hotspotListRef.child(String.valueOf(roomCode)).child("plane_anchors");
+    DatabaseReference getPlaneAnchorsRef(Long roomCode, String method){
+        return hotspotListRef.child(String.valueOf(roomCode)).child("plane_anchors_" + method);
     }
 
     void uploadImage(byte[] file, String fileName, float[] invModelViewMatrix, String timestamp){
@@ -299,7 +300,7 @@ class FirebaseManager {
 ////
 //    };
 
-    PlaneAnchor uploadPlane(Plane plane, Anchor anchor, int num){
+    PlaneAnchor uploadPlane(Plane plane, Anchor anchor, int num, String method){
         PlaneAnchor planeAnchor = null;
         if(!planeID.contains(plane.toString())){
             Log.d("yunho",plane.toString());
@@ -315,15 +316,43 @@ class FirebaseManager {
             }
 
             List<Double> list = Arrays.asList(doublePlaneAnchorMatrix);
-            DatabaseReference ref = currentRoomRef.child("plane_anchors").child("plane"+Integer.toString(planeID.size())).getRef();
+            DatabaseReference ref = currentRoomRef.child("plane_anchors_"+method).child(String.format("plane%03d", planeID.size())).getRef();
             ref.child("transformation_matrix").setValue(list);
             ref.child("width").setValue(plane.getExtentX() * 1000);
             ref.child("height").setValue(plane.getExtentZ() * 1000);
+            ref.child("plane_name").setValue(Integer.toString(planeID.size()));
 
             planeAnchor = new PlaneAnchor(planeAnchorMatrix, (int)(plane.getExtentX() * 1000), (int)(plane.getExtentZ() * 1000));
         }
         return planeAnchor;
     };
+
+    void cleanPlaneID(){
+        planeID = null;
+    }
+
+    void cleanServerPlanes(String method) {
+        currentRoomRef.child("plane_anchors_"+method).removeValue();
+    }
+
+    void cleanServerImages(){
+        Log.d("yunho-cleanup", "images");
+        currentRoomImgRef.listAll()
+                .addOnSuccessListener(new OnSuccessListener<ListResult>() {
+                    @Override
+                    public void onSuccess(ListResult listResult) {
+                        for (StorageReference item : listResult.getItems()) {
+                            // All the items under listRef.
+                            item.delete();
+                        }
+                    }
+                });
+    }
+
+    void cleanServerPredictImages(){
+
+    }
+
 
     /**
      * Resets the current room listener registered using {@link #registerNewListenerForRoom(Long,

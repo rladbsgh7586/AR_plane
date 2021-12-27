@@ -1,6 +1,7 @@
 PlaneAnchor_Server/smartphone_indoor/
 PlaneAnchor_Server/checkpoint/
 PlaneAnchor_Server/inference/
+PlaneAnchor_Server/parameter_test/
 Evaluation/data/
 Evaluation/scenario/
 rs_bag2image/
@@ -9,3 +10,6 @@ rs_bag2image/
 *.png
 *.npy
 *.ply
+*.pyc
+*.txt
+*.pkl
