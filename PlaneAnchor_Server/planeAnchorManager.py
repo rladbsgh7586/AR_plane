@@ -170,10 +170,13 @@ def atoi(text):
 if __name__ == "__main__":
     host = "192.168.1.16"
     port = 7586
-    # scenarios = [1]
-    scenarios = [1,2,4,6,7, 8, 10, 11, 16, 17, 19, 20, 23, 25]
+    scenarios = [1]
+    scenarios = [19]
+    # scenarios = [30]
+    # scenarios = [7]
     for i in scenarios:
-        test_plane_anchor(room_num=i, skip_download=False, skip_inference=False, method="ours")
+        test_plane_anchor(room_num=i, skip_download=True, skip_inference=True, method="ours")
+        # test_plane_anchor(room_num=i, skip_download=False, skip_inference=False, method="ours")
     # update_room_number()
     # listen_device(host, port)
     # test_plane_anchor(room_num=4, skip_download=False, skip_inference=False, method="planercnn")

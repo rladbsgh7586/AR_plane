@@ -20,20 +20,23 @@ def update_room_number(room_numbers, method):
         'databaseURL': 'https://planeanchor-default-rtdb.firebaseio.com/'
     })
     # room_numbers = [4]
-    room_numbers = [1, 2, 4, 6, 7, 8, 9, 10, 11, 12, 16, 17, 19, 20, 21, 23, 25, 26, 27]
+    # room_numbers = [1, 2, 4, 6, 7, 8, 9, 10, 11, 12, 16, 17, 19, 20, 21, 23, 25, 26, 27]
+    room_numbers = [30]
     for room in room_numbers:
         dir = db.reference().child('hotspot_list').child(str(room)).get()
-        dict = dir["plane_anchors"]
+        dict = dir["plane_anchors_planenet"]
         new_dict = {}
         new_number = 0
         for (key, value) in dict.items():
+            if key not in ["plane005", "plane003", "plane006"]:
+                continue
             print(key)
-        #     new_number += 1
+            new_number += 1
             number = re.sub(r'[^0-9]', '', key)
-            value["plane_name"] = number
+            value["plane_name"] = new_number
             new_dict["plane%03i" % int(number)] = value
-        db.reference().child('hotspot_list').child(str(room)).child("plane_anchors_%s" % method).delete()
-        db.reference().child('hotspot_list').child(str(room)).child("plane_anchors_%s" % method).set(new_dict)
+        # db.reference().child('hotspot_list').child(str(room)).child("plane_anchors_%s" % method).delete()
+        db.reference().child('hotspot_list').child(str(room)).child("plane_anchors_planenet").set(new_dict)
 
     # for i in dir:
     #     print(i)
@@ -265,8 +268,8 @@ def make_labeling_path(path):
 def json_to_dataset(json_path):
     step_printer("labelme json to dataset")
     json_list = glob.glob(json_path+"/*.json")
-    for json_path in json_list:
-        os.system("labelme_json_to_dataset %s" % json_path)
+    for path in json_list:
+        os.system("labelme_json_to_dataset %s" % path)
         # label_path = json_path.replace(".", "_") + "/label.png"
         # new_label_path = json_path.replace(".json", "_label.png")
         # os.system("cp %s %s" % (label_path, new_label_path))
@@ -315,13 +318,16 @@ def get_predict_depth(json_dataset_path, predicted_depth_path, params, camera):
             depth_maps = []
             masks = []
             plane_names = []
+            parameters = []
         if frame_name != before_frame:
             np.save(predicted_depth_path + "%s_depth_maps" % before_frame, depth_maps)
             np.save(predicted_depth_path + "%s_masks" % before_frame, masks)
             np.save(predicted_depth_path + "%s_plane_names" % before_frame, plane_names)
+            np.save(predicted_depth_path + "%s_params" % before_frame, parameters)
             depth_maps = []
             masks = []
             plane_names = []
+            parameters = []
         before_frame = frame_name
 
         label_txt = dataset_path + "/label_names.txt"
@@ -348,6 +354,7 @@ def get_predict_depth(json_dataset_path, predicted_depth_path, params, camera):
             masks.append(mask)
             depth_maps.append(depth_map)
             plane_names.append(plane_name)
+            parameters.append(param)
             plane_order +=1
         f.close()
 
@@ -355,6 +362,7 @@ def get_predict_depth(json_dataset_path, predicted_depth_path, params, camera):
         np.save(predicted_depth_path + "%s_depth_maps" % before_frame, depth_maps)
         np.save(predicted_depth_path + "%s_masks" % before_frame, masks)
         np.save(predicted_depth_path + "%s_plane_names" % before_frame, plane_names)
+        np.save(predicted_depth_path + "%s_params" % before_frame, parameters)
 
 
 def calc_depth_map(label_txt, parameter, plane_order, camera):
@@ -491,7 +499,8 @@ def make_gt_params(label, depth_map):
 
 def get_3d_point(x, y, depth):
     # realsense camera intrinsic
-    camera = [380, 380, 321, 237, 640, 480]
+    camera = [492, 490, 308, 229, 640, 480]
+    # camera = [380, 380, 321, 237, 640, 480]
     new_x = - (x - camera[2]) * depth / camera[0]
     new_y = (y - camera[3]) * depth / camera[1]
     return [new_x, new_y, depth]
@@ -623,7 +632,7 @@ def data_load(scenario, method):
 
     # after labeling ground truth
     if success == True:
-        json_to_dataset(new_input_path + "/gt/labeling/")
+        json_to_dataset(new_input_path + "gt/labeling/")
 
         depth_list = glob.glob(new_input_path + "/gt/depth/*")
         labeling_list = glob.glob(new_input_path + "/gt/labeling/*_json")
@@ -691,20 +700,107 @@ def delete_images_not_in_gt(frame_names, image_path):
             os.remove(image)
 
 
-if __name__ == "__main__":
-    # scenarios = [1,2,4,6,7]
-    scenarios = [8,10,11,16,17,19,20,23,25]
-    # scenarios = [1]
-    methods = ["arcore", "planenet", "planercnn"]
+def copy_scenarios(scenario):
+    original_path = "data/HOST%d/eval/planercnn/" % scenario
+    copy_path = "data/HOST%d/eval/ours/" % scenario
+    os.system("cp -r %s %s" % (original_path, copy_path))
 
+
+def make_gt_params_v2(scnario):
+    depth_path = "data/HOST%d/eval/gt/depth/" % scnario
+    depth_maps_list = glob.glob(depth_path + "*_depth_maps_v2*")
+    for depth_map_path in depth_maps_list:
+        params = []
+        depth_map = np.load(depth_map_path)
+        for frame_depth_map in depth_map:
+            point_cloud = []
+            for y in range(480):
+                for x in range(640):
+                    if frame_depth_map[y][x] > 0:
+                        point_cloud.append(get_3d_point(x, y, frame_depth_map[y][x]))
+            if len(point_cloud) > 1000:
+                idx = np.random.randint(len(point_cloud), size=1000)
+                point_cloud = np.array(point_cloud)[idx, :]
+            # plot_points(point_cloud)
+            params.append(plane_points_svd(point_cloud))
+        param_path = depth_map_path.replace("depth_maps", "params")
+        np.save(param_path, params)
+
+
+def make_predict_params(scnario, method):
+    depth_path = "data/HOST%d/eval/%s/predicted_depth/" % (scnario, method)
+    depth_maps_list = glob.glob(depth_path + "*_depth_maps*")
+    for depth_map_path in depth_maps_list:
+        params = []
+        depth_map = np.load(depth_map_path)
+        for frame_depth_map in depth_map:
+            point_cloud = []
+            for y in range(480):
+                for x in range(640):
+                    if frame_depth_map[y][x] > 0:
+                        point_cloud.append(get_3d_point(x, y, frame_depth_map[y][x]))
+            if len(point_cloud) > 1000:
+                idx = np.random.randint(len(point_cloud), size=1000)
+                point_cloud = np.array(point_cloud)[idx, :]
+            # plot_points(point_cloud)
+            params.append(plane_points_svd(point_cloud))
+        param_path = depth_map_path.replace("depth_maps", "params")
+        np.save(param_path, params)
+
+
+def delete_custom(scenario, method):
+    os.system("rm -r data/HOST%d/eval/%s/original/" % (scenario, method))
+    os.system("rm data/HOST%d/eval/%s/plane_parameters.pkl" % (scenario, method))
+
+
+def data_load_specific(scenario, method):
+    method_path = "data/HOST%d/eval/%s_result/" % (scenario, method)
+    camera_intrinsic = [492, 490, 308, 229, 640, 480]
+    predict_images = glob.glob(method_path + "original/*.jpg")
+    if predict_images == []:
+        download_predict_images(method_path, scenario, method)
+
+
+def test():
+    image = Image.open("sample2.png")
+    new_image = image.crop((110, 0, 520, 480))
+    new_image.save("test2.png")
+
+
+if __name__ == "__main__":
+    test()
+    # scenarios = [1,2,4,6,7]
+    # scenarios = [4, 6, 7, 17, 19, 25]
+    scenarios = [1, 2, 4, 6, 7, 8, 10, 11, 16, 17, 19, 20, 23, 25]
+    # total = 0
+    for scenario in scenarios:
+        # make_gt_params_v2(scenario)
+        pass
+    # for s in scenarios:
+    #     total += test(s)
+    # print(total)
+    scenarios = [1]
+    # methods = ["arcore", "planenet", "planercnn", "ours"]
+    # scenarios = [1]
+    # methods = ["planercnn_test"]
+    # for scenario in scenarios:
+    #     for method in methods:
+    #         data_load_specific(scenario, method)
+            # delete_custom(scenario, method)
+            # data_load(scenario, method)
+            # make_predict_params(scenario, method)
+    # update_room_number(0, 0)
     # after delete overlap and irregal frames in gt
     # delete_overlap_frames(scenarios, methods)
 
-    for scenario in scenarios:
-        for method in methods:
-            data_load(scenario, method)
+    # scenarios = [1, 2, 4, 6, 7, 8, 10, 11, 16, 17, 19, 20, 23, 25]
+    # for scenario in scenarios:
+    #     for method in methods:
+    #         data_load(scenario, method)
+    #         delete_overlap_frames(scenarios, methods)
 
     # print(np.load("/data/AR_plane/Evaluation/data/HOST2/eval/depth_predict/001_params.npy"))
+
 
     # test(new_input_path)
 #   eval - input_image, output_image(resized), GT_image(resized), GT_frame_numbers(jpg: inputnum_framenum) / original.output_image, original.GT_image

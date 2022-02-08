@@ -154,9 +154,13 @@ def get_plane_matrix_ours_parameter(mask, camera, point_cloud, projected_point_c
         # if rect.is_in_rect(xy[0], xy[1]):
         #     sampled_point_index.append(i)
     # print("sampled_point_number: ", len(sampled_point_index))
-    plane_normal, offset = parsing_plane_parameter(plane_parameter)
+    plane_normal_planercnn, offset_planercnn = parsing_plane_parameter(plane_parameter)
+    parameter_planercnn = plane_normal_planercnn * offset_planercnn
 
-    parameter_planercnn = plane_normal * offset
+    parameters_planercnn = []
+    for i in plane_normal_planercnn:
+        parameters_planercnn.append(i)
+    parameters_planercnn.append(offset_planercnn)
 
     if len(sampled_point_index) > sampled_point_threshold:
         plane_normal, offset, centroid = plane_points_svd(point_cloud, sampled_point_index)
@@ -168,19 +172,24 @@ def get_plane_matrix_ours_parameter(mask, camera, point_cloud, projected_point_c
             parameters.append(i)
         parameters.append(offset)
 
+
         depth_map = get_depth_map(parameters, gt["planercnn_mask"], camera)
 
-        plane_normal, offset, centroid, sampled_point_index = plane_points_svd_DBSCAN(point_cloud, sampled_point_index,
+        plane_normal, offset, centroid, DBSCAN_sampled_point_index = plane_points_svd_DBSCAN(point_cloud, sampled_point_index,
                                                                                           0.5)
         parameter_DBSCAN = plane_normal * offset
 
-        if len(sampled_point_index) > sampled_point_threshold:
+        if len(DBSCAN_sampled_point_index) > sampled_point_threshold:
             print(image_path)
-            print("sampled_point_number: ", len(sampled_point_index))
+            print(plane_normal_planercnn, offset_planercnn)
+            print(plane_normal, offset)
+            print("sampled_point_number: ", len(DBSCAN_sampled_point_index))
             parameters = []
             for i in plane_normal:
                 parameters.append(i)
             parameters.append(offset)
+            print(parameters)
+
 
             # plot_points_and_plane(point_cloud, sampled_point_index, parameters)
             depth_map_DBSCAN = get_depth_map(parameters, gt["planercnn_mask"], camera)
@@ -193,7 +202,12 @@ def get_plane_matrix_ours_parameter(mask, camera, point_cloud, projected_point_c
             IOU, RMSE = get_IOU(gt["gt_mask"], gt["planercnn_mask"], gt["gt_depth"], depth_map_DBSCAN)
             print("ours_DBSCAN: ", RMSE)
             print("ours_DBSCAN_param_diff:", param_diff(parameter_DBSCAN, parameter_planercnn))
-
+            visualize_depth_numpy(gt["gt_depth"])
+            visualize_depth_numpy(gt["planercnn_depth"])
+            plot_points_and_plane(point_cloud, DBSCAN_sampled_point_index, parameters_planercnn)
+            visualize_depth_numpy(depth_map_DBSCAN)
+            plot_points_and_plane(point_cloud, DBSCAN_sampled_point_index, parameters)
+            raise
 
             if RMSE > gt["RMSE"] / 2:
                 # visualize_depth_numpy(mask)
@@ -398,9 +412,10 @@ def plane_points_svd_DBSCAN(point_cloud, index, epsilon=1, minpts=1):
 if __name__ == "__main__":
     host = "192.168.1.16"
     port = 7586
-    # scenarios = [22]
-    scenarios = [1, 2, 4, 6, 7, 8, 10, 11, 16, 17, 19, 20, 23, 25]
+    # scenarios = [7]
+    # scenarios = [1, 2, 4, 6, 7, 8, 10, 11, 16, 17, 19, 20, 23, 25]
+    scenarios = [30,31]
     for i in scenarios:
-        parameter_test(i, "ours")
         # make_gt(i)
         # make_plane_names(i)
+        parameter_test(i, "ours")

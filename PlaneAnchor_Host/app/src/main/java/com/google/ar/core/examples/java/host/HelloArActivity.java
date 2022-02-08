@@ -709,6 +709,7 @@ public class HelloArActivity extends AppCompatActivity implements SampleRender.R
     return true;
   }
 
+
   private final String MP4_VIDEO_MIME_TYPE = "video/mp4";
 
   private String createMp4File() {
@@ -1462,7 +1463,7 @@ public class HelloArActivity extends AppCompatActivity implements SampleRender.R
                 Matrix.multiplyMM(modelViewMatrix, 0, viewMatrix, 0, modelMatrix, 0);
                 Matrix.invertM(invModelViewMatrix, 0, modelViewMatrix, 0);
                 firebaseManager.uploadImage(jpegData, String.format("%03d", keyFrameCount), invModelViewMatrix, Long.toString(frame.getAndroidCameraTimestamp()));
-                firebaseManager.uploadPCD(transformed_pcd, String.format("%03d", keyFrameCount));
+                firebaseManager.uploadPCD(transformed_pcd, fileName);
                 keyFrame.close();
               }
               catch(Exception e){

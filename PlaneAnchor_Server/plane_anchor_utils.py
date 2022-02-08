@@ -251,6 +251,7 @@ def extract_rect(x, y, mask, camera, image, image_path, size_ratio_threshold):
     return rect
 
 
+
 def extract_rect_ours(x, y, mask, camera, image, image_path):
     min_x, min_y, max_x, max_y = 10000, 10000, -1, -1
     segment_size = float(0)
@@ -277,6 +278,8 @@ def extract_rect_ours(x, y, mask, camera, image, image_path):
     rect = Rect(l, r, t, b)
 
     return rect
+
+
 
 
 def plane_points_svd(point_cloud, index):
@@ -428,8 +431,22 @@ def plot_points(point_cloud, index):
             y_out.append(point_cloud[i][1])
             z_out.append(point_cloud[i][2])
 
+    x = np.linspace(-1, 1, 10)
+    y = np.linspace(-1, 1, 10)
+
+    X,Y = np.meshgrid(x, y)
+    Z = (0.8949 + 0.6625 * X - 0.1668 * Y) / 0.7301
+    # ax.plot_surface(X, Z, Y, alpha=0.5, color='cyan')
     ax.scatter(x_in, z_in, y_in, color='orange')
     ax.scatter(x_out, z_out, y_out)
+    ax.set_xlim3d(-1,1)
+    ax.set_ylim3d(0, 2)
+    ax.set_zlim3d(-1, 1)
+    ax.set_xticklabels(([]))
+    ax.set_yticklabels(([]))
+    ax.set_zticklabels(([]))
+
+    ax.view_init(azim=-90, elev=20.)
     plt.show()
 
 

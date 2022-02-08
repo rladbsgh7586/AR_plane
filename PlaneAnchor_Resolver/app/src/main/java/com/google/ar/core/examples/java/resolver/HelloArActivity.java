@@ -206,6 +206,8 @@ public class HelloArActivity extends AppCompatActivity implements SampleRender.R
 
   private boolean installRequested;
   private boolean shouldMakeRenders = false;
+  private boolean shouldUploadCurrentImage = false;
+  private int fileNumber = 50;
 
   private Session session;
   public SnackbarHelper messageSnackbarHelper = new SnackbarHelper();
@@ -328,6 +330,7 @@ public class HelloArActivity extends AppCompatActivity implements SampleRender.R
   private final SnackbarHelper snackbarHelper = new SnackbarHelper();
   private Button resolveButton;
   private Button scenarioButton;
+  private Button uploadButton;
   private Button imageHostButton;
   private TextView roomCodeText;
   private SharedPreferences sharedPreferences;
@@ -558,8 +561,8 @@ public class HelloArActivity extends AppCompatActivity implements SampleRender.R
     if (mp4FilePath == null)
       return false;
 
+    firebaseManager.setRoomCode(scenario, method);
     if (gtMode == GroundTruthMode.CAPTURE){
-      firebaseManager.setRoomCode(scenario, method);
       firebaseManager.cleanServerPredictImages();
       frameTimestamps = firebaseManager.readFrameTimestamps();
     }
@@ -868,6 +871,8 @@ public class HelloArActivity extends AppCompatActivity implements SampleRender.R
     resolveButton.setOnClickListener((view) -> onResolveButtonPress());
     scenarioButton = findViewById(R.id.scenario_button);
     scenarioButton.setOnClickListener((view) -> onScenarioButtonPress());
+    uploadButton = findViewById(R.id.upload_button);
+    uploadButton.setOnClickListener((view) -> onUploadButtonPress());
     imageHostButton = findViewById(R.id.image_hosting_button);
     imageHostButton.setOnClickListener((view) -> onImageHostButtonPress());
     roomCodeText = findViewById(R.id.room_code_text);
@@ -1384,6 +1389,7 @@ public class HelloArActivity extends AppCompatActivity implements SampleRender.R
 
     // Visualize tracked points.
     // Use try-with-resources to automatically release the point cloud.
+
     try (PointCloud pointCloud = frame.acquirePointCloud()) {
       if (pointCloud.getTimestamp() > lastPointCloudTimestamp) {
         pointCloudVertexBuffer.set(pointCloud.getPoints());
@@ -1418,7 +1424,18 @@ public class HelloArActivity extends AppCompatActivity implements SampleRender.R
       }
       Matrix.multiplyMM(modelViewProjectionMatrix, 0, projectionMatrix, 0, viewMatrix, 0);
       pointCloudShader.setMat4("u_ModelViewProjection", modelViewProjectionMatrix);
-      render.draw(pointCloudMesh, pointCloudShader);
+//      render.draw(pointCloudMesh, pointCloudShader);
+    }
+    if (shouldUploadCurrentImage==true){
+      shouldUploadCurrentImage = false;
+      try{
+        Image keyFrame = frame.acquireCameraImage();
+        byte[] jpegData = ImageHelper.imageToByteArray(keyFrame);
+        firebaseManager.uploadCurrentImage(jpegData, Long.toString(frame.getAndroidCameraTimestamp()), String.format("%03d", fileNumber));
+      }
+      catch(Exception e){
+        e.printStackTrace();
+      }
     }
 
     if(currentMode == HostResolveMode.PLANEHOSTING){
@@ -1518,7 +1535,6 @@ public class HelloArActivity extends AppCompatActivity implements SampleRender.R
         planeRenders.clear();
         int i = 0;
         for(PlaneAnchor planeAnchor: planeAnchors){
-          Log.d("yunho-plane", planeAnchor.getName());
           makePlaneRenders(planeAnchor, planeAnchor.getName());
           i+=1;
         }
@@ -1708,6 +1724,12 @@ public class HelloArActivity extends AppCompatActivity implements SampleRender.R
     ResolveDialogFragment dialogFragment = new ResolveDialogFragment();
     dialogFragment.setOkListener(this::onScenarioEntered);
     dialogFragment.show(getSupportFragmentManager(), "ScenarioDialog");
+  }
+
+  private void onUploadButtonPress(){
+    Log.d("yunho", "upload button pressed");
+    fileNumber += 1;
+    shouldUploadCurrentImage = true;
   }
 
   private void onScenarioEntered(Long roomCode) {

@@ -252,6 +252,25 @@ class FirebaseManager {
         });
     };
 
+    void uploadCurrentImage(byte[] file, String timestamp, String fileName){
+        StorageMetadata metadata = new StorageMetadata.Builder()
+                .setCustomMetadata("timestamp", timestamp)
+                .build();
+        UploadTask uploadTask = currentRoomImgRef.child(fileName+".jpg").putBytes(file);
+        uploadTask.addOnFailureListener(new OnFailureListener() {
+            @Override
+            public void onFailure(Exception e) {
+            }
+        }).addOnSuccessListener(new OnSuccessListener<UploadTask.TaskSnapshot>() {
+            @Override
+            public void onSuccess(UploadTask.TaskSnapshot taskSnapshot) {
+                currentRoomImgRef.child(fileName+".jpg").updateMetadata(metadata);
+                // taskSnapshot.getMetadata() contains file metadata such as size, content-type, etc.
+                // ...
+            }
+        });
+    };
+
     public void uploadPredictedImage(byte[] file, String fileName, float[] invModelViewMatrix){
         StorageMetadata metadata = new StorageMetadata.Builder()
                 .setCustomMetadata("inverseModelViewMatrix", Arrays.toString(invModelViewMatrix))

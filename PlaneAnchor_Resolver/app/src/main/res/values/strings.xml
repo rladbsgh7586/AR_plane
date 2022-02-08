@@ -93,10 +93,10 @@
     <item>none</item>
     <item>arcore</item>
     <item>planercnn</item>
-    <item>mws</item>
     <item>planenet</item>
-    <item>gt</item>
     <item>ours</item>
+    <item>planercnn_test</item>
+    <item>ours_test</item>
   </string-array>
 
 

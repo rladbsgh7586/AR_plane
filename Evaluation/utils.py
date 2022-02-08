@@ -86,3 +86,14 @@ def bag2depth_npy_align(file_name, save_path, todo_frames):
         np.save(os.path.join(save_path, "frame%06i.npy" % frame_num), depth_npy)
         todo_frames.remove(frame_num)
 
+
+def param_diff(a, b):
+    a_offset = a[3]
+    b_offset = b[3]
+    new_a, new_b = [], []
+    for i in range(len(a)-1):
+        new_a.append(a[i] * a_offset)
+        new_b.append(b[i] * b_offset)
+    diff = np.abs(np.subtract(new_a,new_b))
+    diff_mean = np.mean(diff)
+    return diff_mean

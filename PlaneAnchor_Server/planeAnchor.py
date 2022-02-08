@@ -14,7 +14,7 @@ def host_plane(room_number, total_image_number, method):
     sampled_point_threshold = 4
     DBSCAN_epsilon = 0.5
     param_diff_threshold = 1
-    if method == "planercnn" or method == "gt":
+    if method == "planercnn" or method == "gt" or method == "ours":
         rect_size_threshold = 0.7
     if method == "planenet":
         rect_size_threshold = 0.6
@@ -49,6 +49,8 @@ def host_plane(room_number, total_image_number, method):
         threshold = plane_size_threshold * np.size(plane_mask[0])
         plane_parameters = np.load(result_directory + str(num) + "_plane_parameters_0.npy")
         point_cloud = get_point_cloud(data_directory + "%03i" % (num + 1) + "_pcd.txt", 0.5)
+        for i in range(len(point_cloud)):
+            point_cloud[i][2] = -point_cloud[i][2]
         projected_point_cloud = get_projected_point_cloud(point_cloud)
         im = pilimg.open(result_directory + str(num) + "_image_0.png")
         image_path = result_directory + str(num) + "_image_mask"
@@ -59,7 +61,6 @@ def host_plane(room_number, total_image_number, method):
             gt_path = "../Evaluation/data/HOST%i/eval/" % room_number
             plane_mask = np.load(gt_path + "depth_gt/%03i_masks.npy" % (num+1))
             plane_parameters = np.load(gt_path + "depth_gt/%03i_params.npy" % (num+1))
-            print(np.shape(plane_mask))
 
         for i in range(plane_mask.shape[0]):
             mask = result_zero_padding(plane_mask[i], zero_padding_pixel)
@@ -67,15 +68,16 @@ def host_plane(room_number, total_image_number, method):
                 continue
             temp_image_path = image_path + str(i) + ".png"
             if method == "ours":
+                if temp_image_path != "./inference/19_ours/8_image_mask0.png":
+                    continue
                 transformation_matrix, width, height, param, selector = get_plane_matrix_ours(mask, camera_intrinsics, point_cloud, plane_parameters[i],
                                                                     projected_point_cloud, image_pixel, temp_image_path,
-                                                                    sampled_point_threshold, DBSCAN_epsilon, param_diff_threshold)
+                                                                    sampled_point_threshold, DBSCAN_epsilon, param_diff_threshold, rect_size_threshold)
             if method == "planercnn" or method == "planenet" or method == "mws":
                 transformation_matrix, width, height, param = get_plane_matrix_planercnn(mask, camera_intrinsics, image_pixel, plane_parameters[i],
                                                                         temp_image_path, rect_size_threshold)
 
             if method == "gt":
-                print(np.sum(plane_parameters[i]))
                 if np.sum(plane_parameters[i]) == 0:
                     continue
                 transformation_matrix, width, height, param = get_plane_matrix_gt(mask, image_pixel, plane_parameters[i], temp_image_path, rect_size_threshold)
@@ -89,7 +91,8 @@ def host_plane(room_number, total_image_number, method):
                 normal, offset = parsing_plane_parameter(param)
                 if method == "ours":
                     if selector == "ours":
-                        f.write("this is our method plane")
+                        print("ours selected")
+                        f.write("---------this is our plane\n")
                 f.write("plane%i_path: %s\n" % (plane_number, temp_image_path))
                 f.write("plane%i_normal: %s\n" % (plane_number, ' '.join(str(e) for e in normal)))
                 f.write("plane%i_offset: %s\n\n" % (plane_number, str(offset)))
@@ -164,11 +167,11 @@ def count_mask(a):
     return np.count_nonzero(a)
 
 
-def get_plane_matrix_ours(mask, camera, point_cloud, plane_parameter, projected_point_cloud, image, image_path, sampled_point_threshold, DBSCAN_epsilon, param_diff_threshold):
+def get_plane_matrix_ours(mask, camera, point_cloud, plane_parameter, projected_point_cloud, image, image_path, sampled_point_threshold, DBSCAN_epsilon, param_diff_threshold, rect_size_threshold):
     # get 2d center coordinate
     center_x, center_y = get_2d_center_coordinate(mask)
     # plane range in normal coordinate [l, r, t, b]
-    rect = extract_rect_ours(center_x, center_y, mask, camera, image, image_path)
+    rect = extract_rect(center_x, center_y, mask, camera, image, image_path, rect_size_threshold)
 
     sampled_point_index = []
     new_mask = np.zeros(np.shape(mask))
@@ -183,6 +186,7 @@ def get_plane_matrix_ours(mask, camera, point_cloud, plane_parameter, projected_
             pass
 
     plane_normal, offset = parsing_plane_parameter(plane_parameter)
+
     selector = "planercnn"
     parameter_planercnn = plane_normal * offset
 
@@ -192,10 +196,15 @@ def get_plane_matrix_ours(mask, camera, point_cloud, plane_parameter, projected_
         if len(sampled_point_index) > sampled_point_threshold:
             parameter_ours = plane_normal_svd * offset_svd
             if param_diff(parameter_ours, parameter_planercnn) < param_diff_threshold:
+                if len(sampled_point_index) > 10:
+                    plot_points(point_cloud, sampled_point_index)
+                # print(param_diff(parameter_ours, parameter_planercnn))
                 plane_normal = plane_normal_svd
+                # print(plane_normal)
                 offset = offset_svd
+                print(plane_normal, offset)
                 selector = "ours"
-
+    print(plane_normal)
     transformation_matrix, w_multiplier, h_multiplier = calc_transformation_matrix(plane_normal, offset, center_x,
                                                                                    center_y, camera)
     transformation_matrix = np.transpose(transformation_matrix)
@@ -209,8 +218,8 @@ def get_plane_matrix_ours(mask, camera, point_cloud, plane_parameter, projected_
 
     if center_3d[2] < -10 or center_3d[2] > 0 or rect.get_width() < 100:
         return 0, 0, 0, 0, 0
-    width = abs(rect.get_width() * center_3d[2])
-    height = abs(rect.get_height() * center_3d[2])
+    width = abs(rect.get_width() * w_multiplier)
+    height = abs(rect.get_height() * h_multiplier)
 
     return transformation_matrix, width, height, plane_normal * offset, selector
 
